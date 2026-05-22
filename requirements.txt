@@ -4,3 +4,5 @@ openpyxl
 plotly
 st-supabase-connection
 supabase
+Add reportlab for PDF generation in Opname page
+Fix ModuleNotFoundError: No module named 'reportlab'
