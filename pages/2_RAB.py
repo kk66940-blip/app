@@ -4,6 +4,9 @@ from utils.helpers import format_rupiah
 from datetime import datetime
 from collections import defaultdict
 
+# ==================== IMPORT BARU ====================
+from utils.ahsp_helper import get_ahsp_for_selection
+
 supabase = get_supabase()
 project_id = st.session_state.get("current_project_id")
 
@@ -28,15 +31,6 @@ search_term = st.text_input(
     key="rab_live_search"
 )
 
-# === FORCE LIVE UPDATE (menggunakan st.rerun) ===
-if "previous_search" not in st.session_state:
-    st.session_state.previous_search = ""
-
-if search_term != st.session_state.previous_search:
-    st.session_state.previous_search = search_term
-    st.rerun()   # ← Sudah diperbaiki
-
-# Proses filtering
 if search_term and search_term.strip() != "":
     search_lower = search_term.lower().strip()
     
@@ -59,7 +53,7 @@ else:
 
 st.divider()
 
-# ==================== TAMBAH ITEM ====================
+# ==================== TAMBAH ITEM BARU (LAMA) ====================
 with st.expander("➕ Tambah Item BARU", expanded=False):
     col1, col2 = st.columns([1, 2])
     with col1:
@@ -95,6 +89,81 @@ with st.expander("➕ Tambah Item BARU", expanded=False):
         supabase.table("rab_items").insert(new_item).execute()
         st.success("✅ Item berhasil ditambahkan!")
         st.rerun()
+
+st.divider()
+
+# ==================== TAMBAH ITEM DARI AHSP (FITUR BARU) ====================
+with st.expander("➕ Tambah Item dari Database AHSP", expanded=False):
+    st.caption("Pilih item dari database AHSP. Harga akan otomatis terisi dari perhitungan terbaru.")
+
+    ahsp_items = get_ahsp_for_selection()
+
+    if not ahsp_items:
+        st.warning("Belum ada data di Database AHSP. Silakan isi dulu di halaman Database AHSP.")
+    else:
+        # Format pilihan
+        ahsp_options = {
+            f"{item['code']} - {item['description'][:65]} ({item.get('unit', '-')})": item 
+            for item in ahsp_items
+        }
+
+        selected_label = st.selectbox(
+            "Pilih Item AHSP",
+            options=list(ahsp_options.keys()),
+            key="ahsp_select_rab"
+        )
+
+        selected_ahsp = ahsp_options[selected_label]
+
+        # Preview
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Kode", selected_ahsp['code'])
+        col2.metric("Satuan", selected_ahsp.get('unit', '-'))
+        col3.metric("Harga dari AHSP", f"Rp {selected_ahsp.get('calculated_unit_price', 0):,.0f}")
+
+        st.divider()
+
+        # Form input
+        with st.form("form_add_from_ahsp"):
+            col_a, col_b = st.columns(2)
+            with col_a:
+                level = st.selectbox("Level", [0, 1, 2, 3], index=0, key="ahsp_level")
+                volume = st.number_input("Volume", value=1.0, step=0.01, key="ahsp_volume")
+            with col_b:
+                sort_order = st.number_input("Urutan", value=1, step=1, key="ahsp_sort")
+                parent_options = ["Tidak ada (Main Item)"] + [
+                    f"{item['code']} - {item['description'][:40]}" 
+                    for item in all_rab_items if item.get('level') == level - 1
+                ]
+                parent_choice = st.selectbox("Parent Item", parent_options, key="ahsp_parent")
+
+            if st.form_submit_button("💾 Simpan ke RAB dari AHSP", type="primary", use_container_width=True):
+                try:
+                    parent_id = None
+                    if parent_choice != "Tidak ada (Main Item)":
+                        parent_code = parent_choice.split(" - ")[0]
+                        parent = next((item for item in all_rab_items if item['code'] == parent_code), None)
+                        if parent:
+                            parent_id = parent['id']
+
+                    new_item = {
+                        "project_id": project_id,
+                        "code": selected_ahsp['code'],
+                        "description": selected_ahsp['description'],
+                        "volume": volume,
+                        "unit": selected_ahsp.get('unit', ''),
+                        "unit_price": selected_ahsp.get('calculated_unit_price', 0) or selected_ahsp.get('stored_unit_price', 0),
+                        "level": level,
+                        "parent_id": parent_id,
+                        "sort_order": sort_order
+                    }
+
+                    supabase.table("rab_items").insert(new_item).execute()
+                    st.success(f"✅ Item dari AHSP berhasil ditambahkan: {selected_ahsp['code']}")
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"Gagal menyimpan: {str(e)}")
 
 st.divider()
 
@@ -146,10 +215,9 @@ else:
 # ==================== EDIT FORM ====================
 if "edit_item" in st.session_state:
     item = st.session_state.edit_item
+    st.subheader(f"✏️ Edit Item: {item['code']}")
     
     with st.form("edit_rab_form"):
-        st.subheader(f"✏️ Edit Item: {item['code']} - {item['description']}")
-        
         col1, col2 = st.columns(2)
         with col1:
             new_code = st.text_input("Kode", value=item.get('code', ''))
