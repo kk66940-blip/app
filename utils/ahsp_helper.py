@@ -10,10 +10,6 @@ supabase = get_supabase()
 
 
 def get_all_ahsp_items() -> List[Dict]:
-    """
-    Mengambil semua item AHSP beserta harga yang sudah dihitung.
-    Menggunakan View v_ahsp_items.
-    """
     try:
         response = supabase.table("v_ahsp_items").select("*").execute()
         return response.data if response.data else []
@@ -23,15 +19,8 @@ def get_all_ahsp_items() -> List[Dict]:
 
 
 def get_ahsp_item_by_id(ahsp_item_id: int) -> Optional[Dict]:
-    """Mengambil satu item AHSP berdasarkan ID"""
     try:
-        response = (
-            supabase.table("v_ahsp_items")
-            .select("*")
-            .eq("id", ahsp_item_id)
-            .single()
-            .execute()
-        )
+        response = supabase.table("v_ahsp_items").select("*").eq("id", ahsp_item_id).single().execute()
         return response.data
     except Exception as e:
         print(f"Error get_ahsp_item_by_id: {e}")
@@ -39,15 +28,8 @@ def get_ahsp_item_by_id(ahsp_item_id: int) -> Optional[Dict]:
 
 
 def calculate_unit_price(ahsp_item_id: int) -> float:
-    """
-    Menghitung harga satuan berdasarkan komposisi.
-    Memanggil fungsi PostgreSQL: calculate_ahsp_unit_price
-    """
     try:
-        response = supabase.rpc(
-            "calculate_ahsp_unit_price",
-            {"p_ahsp_item_id": ahsp_item_id}
-        ).execute()
+        response = supabase.rpc("calculate_ahsp_unit_price", {"p_ahsp_item_id": ahsp_item_id}).execute()
         return float(response.data) if response.data else 0.0
     except Exception as e:
         print(f"Error calculate_unit_price: {e}")
@@ -55,15 +37,8 @@ def calculate_unit_price(ahsp_item_id: int) -> float:
 
 
 def update_unit_price(ahsp_item_id: int) -> bool:
-    """
-    Update harga satuan ke tabel ahsp_items.
-    Memanggil fungsi PostgreSQL: update_ahsp_unit_price
-    """
     try:
-        supabase.rpc(
-            "update_ahsp_unit_price",
-            {"p_ahsp_item_id": ahsp_item_id}
-        ).execute()
+        supabase.rpc("update_ahsp_unit_price", {"p_ahsp_item_id": ahsp_item_id}).execute()
         return True
     except Exception as e:
         print(f"Error update_unit_price: {e}")
@@ -71,36 +46,21 @@ def update_unit_price(ahsp_item_id: int) -> bool:
 
 
 def get_price_breakdown(ahsp_item_id: int) -> Dict[str, float]:
-    """
-    Mendapatkan rincian harga (Material, Labor, Equipment).
-    """
     try:
-        response = supabase.rpc(
-            "get_ahsp_price_breakdown",
-            {"p_ahsp_item_id": ahsp_item_id}
-        ).execute()
-        
-        if response.data:
-            return response.data[0]
-        return {"material_cost": 0, "labor_cost": 0, "equipment_cost": 0, "total_cost": 0}
+        response = supabase.rpc("get_ahsp_price_breakdown", {"p_ahsp_item_id": ahsp_item_id}).execute()
+        return response.data[0] if response.data else {"material_cost": 0, "labor_cost": 0, "equipment_cost": 0, "total_cost": 0}
     except Exception as e:
         print(f"Error get_price_breakdown: {e}")
         return {"material_cost": 0, "labor_cost": 0, "equipment_cost": 0, "total_cost": 0}
 
 
 def update_all_ahsp_prices() -> int:
-    """
-    Update harga satuan untuk SEMUA item AHSP.
-    Mengembalikan jumlah item yang berhasil diupdate.
-    """
     try:
         items = get_all_ahsp_items()
         updated_count = 0
-        
         for item in items:
             if update_unit_price(item["id"]):
                 updated_count += 1
-        
         return updated_count
     except Exception as e:
         print(f"Error update_all_ahsp_prices: {e}")
@@ -108,14 +68,8 @@ def update_all_ahsp_prices() -> int:
 
 
 def get_ahsp_by_division(division_name: str) -> List[Dict]:
-    """Filter AHSP berdasarkan nama divisi"""
     try:
-        response = (
-            supabase.table("v_ahsp_items")
-            .select("*")
-            .eq("division_name", division_name)
-            .execute()
-        )
+        response = supabase.table("v_ahsp_items").select("*").eq("division_name", division_name).execute()
         return response.data if response.data else []
     except Exception as e:
         print(f"Error get_ahsp_by_division: {e}")
@@ -123,15 +77,30 @@ def get_ahsp_by_division(division_name: str) -> List[Dict]:
 
 
 def search_ahsp_items(search_term: str) -> List[Dict]:
-    """Cari item AHSP berdasarkan kode atau deskripsi"""
     try:
-        response = (
-            supabase.table("v_ahsp_items")
-            .select("*")
-            .or_(f"code.ilike.%{search_term}%,description.ilike.%{search_term}%")
-            .execute()
-        )
+        response = supabase.table("v_ahsp_items").select("*").or_(
+            f"code.ilike.%{search_term}%,description.ilike.%{search_term}%"
+        ).execute()
         return response.data if response.data else []
     except Exception as e:
         print(f"Error search_ahsp_items: {e}")
+        return []
+
+
+# =====================================================
+# FUNGSI BARU untuk integrasi dengan RAB
+# =====================================================
+
+def get_ahsp_for_selection() -> List[Dict]:
+    """
+    Mengambil data AHSP yang siap dipilih untuk ditambahkan ke RAB.
+    Hanya mengambil field yang dibutuhkan.
+    """
+    try:
+        response = supabase.table("v_ahsp_items").select(
+            "id, code, description, unit, calculated_unit_price, stored_unit_price, division_name"
+        ).execute()
+        return response.data if response.data else []
+    except Exception as e:
+        print(f"Error get_ahsp_for_selection: {e}")
         return []
