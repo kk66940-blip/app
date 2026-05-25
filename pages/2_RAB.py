@@ -146,8 +146,44 @@ else:
 # ==================== EDIT FORM ====================
 if "edit_item" in st.session_state:
     item = st.session_state.edit_item
-    st.subheader(f"✏️ Edit Item: {item['code']}")
-    # Form edit bisa ditambahkan di sini jika perlu
+    
+    with st.form("edit_rab_form"):
+        st.subheader(f"✏️ Edit Item: {item['code']} - {item['description']}")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            new_code = st.text_input("Kode", value=item.get('code', ''))
+            new_desc = st.text_input("Uraian Pekerjaan", value=item.get('description', ''))
+            new_level = st.selectbox("Level", [0,1,2,3], index=item.get('level', 0))
+        with col2:
+            new_volume = st.number_input("Volume", value=float(item.get('volume', 0)), step=0.01)
+            new_unit = st.text_input("Satuan", value=item.get('unit', ''))
+            new_price = st.number_input("Harga Satuan (Rp)", value=float(item.get('unit_price', 0)), step=1000)
+
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.form_submit_button("💾 Simpan Perubahan", type="primary", use_container_width=True):
+                try:
+                    supabase.table("rab_items").update({
+                        "code": new_code,
+                        "description": new_desc,
+                        "level": new_level,
+                        "volume": new_volume,
+                        "unit": new_unit,
+                        "unit_price": new_price,
+                        "updated_at": datetime.now().isoformat()
+                    }).eq("id", item['id']).execute()
+                    
+                    st.success("✅ Item berhasil diperbarui!")
+                    del st.session_state.edit_item
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
+        
+        with col_btn2:
+            if st.form_submit_button("Batal", use_container_width=True):
+                del st.session_state.edit_item
+                st.rerun()
 
 st.divider()
 
