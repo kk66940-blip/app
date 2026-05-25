@@ -61,13 +61,14 @@ if projects:
     st.sidebar.caption(f"**Proyek Aktif:** {selected_project_name}")
 
 pages = [
-    st.Page("pages/0_Projects.py", title="🏗️ Projects", icon="🏗️"),   # ← Tambahkan baris ini
+    st.Page("pages/0_Projects.py", title="🏗️ Projects", icon="🏗️"),
     st.Page("pages/1_Dashboard.py", title="Dashboard", icon="📈"),
     st.Page("pages/2_RAB.py", title="RAB", icon="📋"),
     st.Page("pages/3_Opname.py", title="Opname", icon="📝"),
     st.Page("pages/3_Opname_Sub.py", title="Opname Sub", icon="📝"),
     st.Page("pages/4_RAP.py", title="RAP", icon="📋"),
-    st.Page("pages/5_Laporan.py", title="Laporan", icon="🖨️")
+    st.Page("pages/5_Laporan.py", title="Laporan", icon="🖨️"),
+    st.Page("pages/6_AHSP.py", title="AHSP", icon="📊"),   # ← Tambahkan baris ini
 ]
 
 pg = st.navigation(pages)
