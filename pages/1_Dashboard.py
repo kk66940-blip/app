@@ -170,4 +170,40 @@ if main_items:
 else:
     st.info("Belum ada Main Item di RAB.")
 
+
+st.divider()
+
+# ==================== RINGKASAN PENGELUARAN ====================
+st.subheader("💰 Ringkasan Pengeluaran")
+
+try:
+    expenses = supabase.table("project_expenses") \
+        .select("category, amount") \
+        .eq("project_id", project_id) \
+        .execute().data
+
+    if expenses:
+        from collections import defaultdict
+        expense_summary = defaultdict(float)
+        total_expense = 0
+
+        for exp in expenses:
+            expense_summary[exp["category"]] += exp.get("amount", 0)
+            total_expense += exp.get("amount", 0)
+
+        # Total Pengeluaran
+        st.metric("Total Pengeluaran", format_rupiah(total_expense))
+
+        # Ringkasan per Kategori
+        st.markdown("**Per Kategori:**")
+        cols = st.columns(len(expense_summary))
+        for idx, (category, amount) in enumerate(expense_summary.items()):
+            with cols[idx]:
+                st.metric(category, format_rupiah(amount))
+    else:
+        st.info("Belum ada data pengeluaran untuk proyek ini.")
+
+except Exception as e:
+    st.error(f"Gagal memuat data pengeluaran: {e}")
+
 st.success("✅ Dashboard telah diperbarui sesuai permintaan!")
