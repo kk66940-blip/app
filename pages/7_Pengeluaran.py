@@ -148,16 +148,21 @@ if expenses:
 # ==================== FORM EDIT ====================
 if "edit_expense" in st.session_state:
     exp = st.session_state.edit_expense
-    st.subheader(f"✏️ Edit Pengeluaran: {exp['category']}")
+    st.subheader(f"✏️ Edit Pengeluaran")
 
     with st.form("form_edit_expense"):
         col1, col2 = st.columns(2)
         with col1:
             new_date = st.date_input("Tanggal", datetime.strptime(exp['expense_date'], "%Y-%m-%d").date())
-            new_amount = st.number_input("Jumlah (Rp)", value=float(exp.get('amount', 0)), step=10000)
+            new_amount = st.number_input(
+                "Jumlah (Rp)", 
+                value=float(exp.get('amount', 0)), 
+                step=10000.0,           # ← Diubah menjadi float
+                format="%.0f"
+            )
         with col2:
             new_paid_by = st.text_input("Dibayar Oleh", value=exp.get('paid_by', ''))
-        
+
         new_description = st.text_area("Uraian", value=exp.get('description', ''))
         new_notes = st.text_input("Catatan", value=exp.get('notes', ''))
 
@@ -172,13 +177,13 @@ if "edit_expense" in st.session_state:
                         "description": new_description,
                         "notes": new_notes
                     }).eq("id", exp['id']).execute()
-                    
+
                     st.success("✅ Pengeluaran berhasil diperbarui!")
                     del st.session_state.edit_expense
                     st.rerun()
                 except Exception as e:
                     st.error(f"Gagal memperbarui: {e}")
-        
+
         with col_btn2:
             if st.form_submit_button("Batal", use_container_width=True):
                 del st.session_state.edit_expense
