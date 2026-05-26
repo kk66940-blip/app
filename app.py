@@ -68,7 +68,8 @@ pages = [
     st.Page("pages/3_Opname_Sub.py", title="Opname Sub", icon="📝"),
     st.Page("pages/4_RAP.py", title="RAP", icon="📋"),
     st.Page("pages/5_Laporan.py", title="Laporan", icon="🖨️"),
-    st.Page("pages/6_AHSP.py", title="AHSP", icon="📊"),   # ← Tambahkan baris ini
+    st.Page("pages/6_AHSP.py", title="AHSP", icon="📊"),
+    st.Page("pages/7_Pengeluaran.py", title="Pengeluaran", icon="💰"),   # ← Tambahkan ini
 ]
 
 pg = st.navigation(pages)
