@@ -79,7 +79,7 @@ with tab1:
             notes = st.text_area("Catatan Tambahan")
 
         st.divider()
-        st.markdown("**Pilih Item RAP (Hierarkis)**")
+        st.markdown("**Pilih Item RAP (Sesuai Logika RAP)**")
 
         all_rap = supabase.table("rap_items") \
             .select("id, code, description, execution_price, unit, volume, parent_id") \
@@ -90,14 +90,10 @@ with tab1:
         selected_main_code = "GEN"
 
         if all_rap:
-            # === LOGIKA HYBRID (parent_id dulu, fallback ke volume + "pekerjaan") ===
-            main_items = [item for item in all_rap if item.get('parent_id') is None or item.get('parent_id') == 0]
-
-            if not main_items:
-                # Fallback kalau parent_id belum dipakai di database kamu
-                main_items = [item for item in all_rap 
-                              if (item.get('volume') == 0 or item.get('volume') is None) 
-                              and "pekerjaan" in item.get('description', '').lower()]
+            # === LOGIKA SAMA PERSIS DENGAN MENU RAP KAMU ===
+            main_items = [item for item in all_rap 
+                          if (item.get('volume') == 0 or item.get('volume') is None) 
+                          and "pekerjaan" in item.get('description', '').lower()]
 
             if main_items:
                 main_options = {f"{item['code']} - {item['description'][:55]}": item['id'] for item in main_items}
@@ -108,7 +104,10 @@ with tab1:
                 if main_item_obj:
                     selected_main_code = main_item_obj['code']
 
-                sub_items = [item for item in all_rap if item.get('parent_id') == selected_main_id]
+                # Ambil semua item yang bukan main item (sub item)
+                sub_items = [item for item in all_rap 
+                             if not ((item.get('volume') == 0 or item.get('volume') is None) 
+                                     and "pekerjaan" in item.get('description', '').lower())]
 
                 if sub_items:
                     sub_options = {f"{item['code']} - {item['description'][:50]} (Rp {item['execution_price']:,.0f})": item['id'] for item in sub_items}
@@ -118,7 +117,7 @@ with tab1:
                     st.info("Main item ini tidak memiliki sub item. Item utama akan digunakan.")
                     selected_rap_ids = [selected_main_id]
             else:
-                st.warning("Tidak ada Main Item yang terdeteksi.")
+                st.warning("Tidak ada Main Item yang terdeteksi (volume=0 + 'pekerjaan').")
         else:
             st.warning("Belum ada data RAP.")
 
