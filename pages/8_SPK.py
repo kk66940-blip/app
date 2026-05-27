@@ -79,7 +79,7 @@ with tab1:
             notes = st.text_area("Catatan Tambahan")
 
         st.divider()
-        st.markdown("**Pilih Item RAP (Sesuai Logika RAP)**")
+        st.markdown("**Pilih Item RAP (Hierarkis - Hanya Sub Item dari Main yang Dipilih)**")
 
         all_rap = supabase.table("rap_items") \
             .select("id, code, description, execution_price, unit, volume, parent_id") \
@@ -90,8 +90,11 @@ with tab1:
         selected_main_code = "GEN"
 
         if all_rap:
-            # === LOGIKA SAMA PERSIS DENGAN MENU RAP KAMU ===
-            main_items = [item for item in all_rap 
+            # Urutkan berdasarkan id (sama seperti di RAP)
+            sorted_rap = sorted(all_rap, key=lambda x: x.get('id', 0))
+
+            # Deteksi Main Item (sama persis dengan RAP)
+            main_items = [item for item in sorted_rap 
                           if (item.get('volume') == 0 or item.get('volume') is None) 
                           and "pekerjaan" in item.get('description', '').lower()]
 
@@ -100,24 +103,31 @@ with tab1:
                 selected_main_label = st.selectbox("Pilih Main Item", options=list(main_options.keys()), key="main_item_select")
                 selected_main_id = main_options[selected_main_label]
 
-                main_item_obj = next((item for item in all_rap if item['id'] == selected_main_id), None)
+                main_item_obj = next((item for item in sorted_rap if item['id'] == selected_main_id), None)
                 if main_item_obj:
                     selected_main_code = main_item_obj['code']
 
-                # Ambil semua item yang bukan main item (sub item)
-                sub_items = [item for item in all_rap 
-                             if not ((item.get('volume') == 0 or item.get('volume') is None) 
-                                     and "pekerjaan" in item.get('description', '').lower())]
+                # === LOGIKA BARU: Ambil HANYA sub item yang berada di bawah main ini ===
+                selected_index = next((i for i, item in enumerate(sorted_rap) if item['id'] == selected_main_id), -1)
+                
+                sub_items = []
+                if selected_index != -1:
+                    for i in range(selected_index + 1, len(sorted_rap)):
+                        item = sorted_rap[i]
+                        is_main = (item.get('volume') == 0 or item.get('volume') is None) and "pekerjaan" in item.get('description', '').lower()
+                        if is_main:
+                            break  # ketemu main item berikutnya → stop
+                        sub_items.append(item)
 
                 if sub_items:
                     sub_options = {f"{item['code']} - {item['description'][:50]} (Rp {item['execution_price']:,.0f})": item['id'] for item in sub_items}
-                    selected_sub_labels = st.multiselect("Pilih Sub Item (bisa lebih dari satu)", options=list(sub_options.keys()), key="sub_item_select")
+                    selected_sub_labels = st.multiselect("Pilih Sub Item (hanya milik Main ini)", options=list(sub_options.keys()), key="sub_item_select")
                     selected_rap_ids = [sub_options[label] for label in selected_sub_labels]
                 else:
-                    st.info("Main item ini tidak memiliki sub item. Item utama akan digunakan.")
+                    st.info("Main item ini tidak memiliki sub item di bawahnya.")
                     selected_rap_ids = [selected_main_id]
             else:
-                st.warning("Tidak ada Main Item yang terdeteksi (volume=0 + 'pekerjaan').")
+                st.warning("Tidak ada Main Item yang terdeteksi.")
         else:
             st.warning("Belum ada data RAP.")
 
