@@ -36,7 +36,6 @@ def generate_spk_pdf(spk_data, rap_items_list):
 
         elements = []
 
-        # Header
         elements.append(Paragraph("SURAT PERINTAH KERJA (SPK)", title_style))
         elements.append(Spacer(1, 0.3*cm))
         elements.append(Paragraph(f"<b>Nomor SPK:</b> {spk_data['spk_no']}", normal))
@@ -49,7 +48,6 @@ def generate_spk_pdf(spk_data, rap_items_list):
             elements.append(Paragraph(f"<b>Kontak:</b> {spk_data['recipient_contact']}", normal))
         elements.append(Spacer(1, 0.4*cm))
 
-        # Tabel Item
         table_data = [["No", "Uraian Pekerjaan", "Vol", "Harga (Rp)", "Total (Rp)"]]
         for idx, item in enumerate(rap_items_list, 1):
             table_data.append([
@@ -72,7 +70,6 @@ def generate_spk_pdf(spk_data, rap_items_list):
         elements.append(t)
         elements.append(Spacer(1, 0.5*cm))
 
-        # Syarat & Ketentuan
         if spk_data.get('special_terms'):
             elements.append(Paragraph("<b>Syarat & Ketentuan:</b>", subtitle_style))
             elements.append(Paragraph(spk_data['special_terms'], normal))
@@ -124,35 +121,59 @@ with tab1:
             notes = st.text_area("Catatan Tambahan")
 
         st.divider()
-        st.markdown("**Pilih Item RAP yang akan dimasukkan ke SPK**")
+        st.markdown("**Pilih Item RAP (Hierarkis)**")
 
-        rap_items = supabase.table("rap_items") \
-            .select("id, code, description, execution_price, unit") \
+        all_rap = supabase.table("rap_items") \
+            .select("id, code, description, execution_price, unit, volume, parent_id") \
             .eq("project_id", project_id) \
             .execute().data
 
-        if rap_items:
-            rap_options = {
-                f"{item['code']} - {item['description'][:60]} (Rp {item['execution_price']:,.0f})": item['id']
-                for item in rap_items
-            }
+        if all_rap:
+            main_items = [item for item in all_rap 
+                          if (item.get('volume') == 0 or item.get('volume') is None) 
+                          and "pekerjaan" in item.get('description', '').lower()]
 
-            selected_rap_labels = st.multiselect(
-                "Pilih Item RAP (bisa lebih dari satu)",
-                options=list(rap_options.keys()),
-                key="rap_select"
-            )
+            if main_items:
+                main_options = {f"{item['code']} - {item['description'][:50]}": item['id'] for item in main_items}
+                
+                selected_main_label = st.selectbox(
+                    "Pilih Main Item",
+                    options=list(main_options.keys()),
+                    key="main_item_select"
+                )
+                
+                selected_main_id = main_options[selected_main_label]
+
+                sub_items = [item for item in all_rap if item.get('parent_id') == selected_main_id]
+
+                if sub_items:
+                    sub_options = {
+                        f"{item['code']} - {item['description'][:55]} (Rp {item['execution_price']:,.0f})": item['id']
+                        for item in sub_items
+                    }
+
+                    selected_sub_labels = st.multiselect(
+                        "Pilih Sub Item (bisa lebih dari satu)",
+                        options=list(sub_options.keys()),
+                        key="sub_item_select"
+                    )
+                else:
+                    st.warning("Main item ini tidak memiliki sub item.")
+                    selected_sub_labels = []
+            else:
+                st.warning("Belum ada Main Item di RAP.")
+                selected_sub_labels = []
         else:
-            st.warning("Belum ada data RAP untuk proyek ini.")
-            selected_rap_labels = []
+            st.warning("Belum ada data RAP.")
+            selected_sub_labels = []
 
         submitted = st.form_submit_button("💾 Simpan SPK", type="primary", use_container_width=True)
 
         if submitted:
             if not recipient_name or not deadline_date:
                 st.error("Nama Penerima dan Tenggat Waktu wajib diisi!")
-            elif not selected_rap_labels:
-                st.error("Pilih minimal satu item RAP!")
+            elif not selected_sub_labels:
+                st.error("Pilih minimal satu Sub Item!")
             else:
                 try:
                     today_str = datetime.now().strftime("%y%m%d")
@@ -190,9 +211,9 @@ with tab1:
                     spk_res = supabase.table("spk").insert(spk_data).execute()
                     new_spk_id = spk_res.data[0]["id"]
 
-                    for label in selected_rap_labels:
-                        rap_id = rap_options[label]
-                        rap_item = next((r for r in rap_items if r["id"] == rap_id), None)
+                    for label in selected_sub_labels:
+                        rap_id = sub_options[label]
+                        rap_item = next((r for r in all_rap if r["id"] == rap_id), None)
                         
                         if rap_item:
                             supabase.table("spk_rap_items").insert({
@@ -243,7 +264,6 @@ with tab2:
                 if spk.get("notes"):
                     st.write(f"**Catatan:** {spk['notes']}")
 
-                # Tombol Aksi
                 col_btn1, col_btn2, col_btn3 = st.columns(3)
                 
                 with col_btn1:
