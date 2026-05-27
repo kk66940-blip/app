@@ -68,7 +68,6 @@ tab1, tab2 = st.tabs(["➕ Buat SPK Baru", "📋 Daftar SPK"])
 with tab1:
     st.subheader("Buat SPK Baru")
 
-    # ==================== PILIH MAIN ITEM (DI LUAR FORM - UPDATE LANGSUNG) ====================
     all_rap = supabase.table("rap_items") \
         .select("id, code, description, execution_price, unit, volume, parent_id") \
         .eq("project_id", project_id) \
@@ -81,40 +80,4 @@ with tab1:
                   and "pekerjaan" in item.get('description', '').lower()]
 
     if main_items:
-        main_options = {f"{item['code']} - {item['description'][:55]}": item['id'] for item in main_items}
-        selected_main_label = st.selectbox("Pilih Main Item", options=list(main_options.keys()), key="main_item_select")
-        selected_main_id = main_options[selected_main_label]
-
-        main_item_obj = next((item for item in sorted_rap if item['id'] == selected_main_id), None)
-        selected_main_code = main_item_obj['code'] if main_item_obj else "GEN"
-
-        # === AMBIL HANYA SUB ITEM MILIK MAIN INI ===
-        selected_index = next((i for i, item in enumerate(sorted_rap) if item['id'] == selected_main_id), -1)
-        sub_items = []
-        if selected_index != -1:
-            for i in range(selected_index + 1, len(sorted_rap)):
-                item = sorted_rap[i]
-                is_main = (item.get('volume') == 0 or item.get('volume') is None) and "pekerjaan" in item.get('description', '').lower()
-                if is_main:
-                    break
-                sub_items.append(item)
-
-        # ==================== FORM (HANYA TOMBOL SIMPAN) ====================
-        with st.form("form_spk", clear_on_submit=True):
-            col1, col2 = st.columns(2)
-            with col1:
-                spk_date = st.date_input("Tanggal SPK", datetime.now().date())
-                recipient_name = st.text_input("Nama Penerima SPK *")
-                recipient_contact = st.text_input("Kontak Penerima (HP/Email)")
-            with col2:
-                deadline_date = st.date_input("Tenggat Waktu Pelaksanaan *")
-                special_terms = st.text_area("Syarat & Ketentuan Khusus")
-                notes = st.text_area("Catatan Tambahan")
-
-            st.divider()
-            st.markdown("**Pilih Sub Item (Hanya milik Main yang dipilih)**")
-
-            if sub_items:
-                sub_options = {f"{item['code']} - {item['description'][:50]} (Rp {item['execution_price']:,.0f})": item['id'] for item in sub_items}
-                selected_sub_labels = st.multiselect("Pilih Sub Item", options=list(sub_options.keys()), key="sub_item_select")
-                selected_rap_ids = [sub_options[label] for label in selected_sub
+        main_options = {f"{item['
