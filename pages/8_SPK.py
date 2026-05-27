@@ -77,33 +77,53 @@ with tab1:
             deadline_date = st.date_input("Tenggat Waktu Pelaksanaan *")
             special_terms = st.text_area("Syarat & Ketentuan Khusus")
             notes = st.text_area("Catatan Tambahan")
+
         st.divider()
-        st.markdown("**Pilih Item RAP (Hierarkis - Main → Sub)**")
-        all_rap = supabase.table("rap_items").select("id, code, description, execution_price, unit, volume, parent_id").eq("project_id", project_id).execute().data
+        st.markdown("**Pilih Item RAP (Hierarkis)**")
+
+        all_rap = supabase.table("rap_items") \
+            .select("id, code, description, execution_price, unit, volume, parent_id") \
+            .eq("project_id", project_id) \
+            .execute().data
+
         selected_rap_ids = []
         selected_main_code = "GEN"
+
         if all_rap:
+            # === LOGIKA HYBRID (parent_id dulu, fallback ke volume + "pekerjaan") ===
             main_items = [item for item in all_rap if item.get('parent_id') is None or item.get('parent_id') == 0]
+
+            if not main_items:
+                # Fallback kalau parent_id belum dipakai di database kamu
+                main_items = [item for item in all_rap 
+                              if (item.get('volume') == 0 or item.get('volume') is None) 
+                              and "pekerjaan" in item.get('description', '').lower()]
+
             if main_items:
                 main_options = {f"{item['code']} - {item['description'][:55]}": item['id'] for item in main_items}
                 selected_main_label = st.selectbox("Pilih Main Item", options=list(main_options.keys()), key="main_item_select")
                 selected_main_id = main_options[selected_main_label]
+
                 main_item_obj = next((item for item in all_rap if item['id'] == selected_main_id), None)
                 if main_item_obj:
                     selected_main_code = main_item_obj['code']
+
                 sub_items = [item for item in all_rap if item.get('parent_id') == selected_main_id]
+
                 if sub_items:
                     sub_options = {f"{item['code']} - {item['description'][:50]} (Rp {item['execution_price']:,.0f})": item['id'] for item in sub_items}
                     selected_sub_labels = st.multiselect("Pilih Sub Item (bisa lebih dari satu)", options=list(sub_options.keys()), key="sub_item_select")
                     selected_rap_ids = [sub_options[label] for label in selected_sub_labels]
                 else:
-                    st.info("Main item ini tidak memiliki sub item. Item utama akan digunakan sebagai SPK.")
+                    st.info("Main item ini tidak memiliki sub item. Item utama akan digunakan.")
                     selected_rap_ids = [selected_main_id]
             else:
-                st.warning("Belum ada Main Item (parent_id NULL) di RAP proyek ini.")
+                st.warning("Tidak ada Main Item yang terdeteksi.")
         else:
             st.warning("Belum ada data RAP.")
+
         submitted = st.form_submit_button("💾 Simpan SPK", type="primary", use_container_width=True)
+
         if submitted:
             if not recipient_name or not deadline_date:
                 st.error("Nama Penerima dan Tenggat Waktu wajib diisi!")
@@ -113,13 +133,37 @@ with tab1:
                 try:
                     today_str = datetime.now().strftime("%d%m%y")
                     spk_no = f"SPK/{today_str}/{selected_main_code}/001"
-                    spk_data = {"project_id": project_id, "spk_no": spk_no, "spk_date": str(spk_date), "recipient_name": recipient_name, "recipient_contact": recipient_contact, "deadline_date": str(deadline_date), "special_terms": special_terms, "status": "In Progress", "created_by": st.session_state.user.get("username", "admin"), "approved_by": st.session_state.user.get("username", "admin"), "approved_at": datetime.now().isoformat(), "notes": notes}
+
+                    spk_data = {
+                        "project_id": project_id,
+                        "spk_no": spk_no,
+                        "spk_date": str(spk_date),
+                        "recipient_name": recipient_name,
+                        "recipient_contact": recipient_contact,
+                        "deadline_date": str(deadline_date),
+                        "special_terms": special_terms,
+                        "status": "In Progress",
+                        "created_by": st.session_state.user.get("username", "admin"),
+                        "approved_by": st.session_state.user.get("username", "admin"),
+                        "approved_at": datetime.now().isoformat(),
+                        "notes": notes
+                    }
                     spk_res = supabase.table("spk").insert(spk_data).execute()
                     new_spk_id = spk_res.data[0]["id"]
+
                     for rap_id in selected_rap_ids:
                         rap_item = next((r for r in all_rap if r["id"] == rap_id), None)
                         if rap_item:
-                            supabase.table("spk_rap_items").insert({"spk_id": new_spk_id, "rap_item_id": rap_id, "volume_target": rap_item.get("volume", 0), "unit_price": rap_item.get("execution_price", 0), "total_value": (rap_item.get("volume", 0) or 0) * (rap_item.get("execution_price", 0) or 0), "description": rap_item.get("description", ""), "unit": rap_item.get("unit", "")}).execute()
+                            supabase.table("spk_rap_items").insert({
+                                "spk_id": new_spk_id,
+                                "rap_item_id": rap_id,
+                                "volume_target": rap_item.get("volume", 0),
+                                "unit_price": rap_item.get("execution_price", 0),
+                                "total_value": (rap_item.get("volume", 0) or 0) * (rap_item.get("execution_price", 0) or 0),
+                                "description": rap_item.get("description", ""),
+                                "unit": rap_item.get("unit", "")
+                            }).execute()
+
                     st.success(f"✅ SPK berhasil dibuat! Nomor: **{spk_no}**")
                     st.balloons()
                     st.rerun()
@@ -129,6 +173,7 @@ with tab1:
 with tab2:
     st.subheader("Daftar Semua SPK")
     spk_list = supabase.table("spk").select("*").eq("project_id", project_id).order("created_at", desc=True).execute().data
+
     if spk_list:
         for spk in spk_list:
             with st.expander(f"**{spk['spk_no']}** | {spk['recipient_name']} | Status: {spk['status']}"):
@@ -144,10 +189,12 @@ with tab2:
                     st.write(f"**Dibuat oleh:** {spk.get('created_by', '-')}")
                     if spk.get("approved_by"):
                         st.write(f"**Disetujui oleh:** {spk['approved_by']}")
+
                 if spk.get("special_terms"):
                     st.write(f"**Syarat Khusus:** {spk['special_terms']}")
                 if spk.get("notes"):
                     st.write(f"**Catatan:** {spk['notes']}")
+
                 col_btn1, col_btn2, col_btn3 = st.columns(3)
                 with col_btn1:
                     if st.button("🔄 Ubah Status", key=f"status_{spk['id']}"):
