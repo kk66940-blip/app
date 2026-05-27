@@ -13,3 +13,16 @@ st.subheader(f"Proyek: {project_name}")
 if not project_id:
     st.warning("Pilih proyek di sidebar terlebih dahulu")
     st.stop()
+# ==================== TABS ====================
+tab1, tab2 = st.tabs(["➕ Buat SPK Baru", "📋 Daftar SPK"])
+
+# ==================== TAB 1: BUAT SPK BARU ====================
+with tab1:
+    st.subheader("Buat SPK Baru")
+
+    # Form akan kita isi di langkah berikutnya
+
+# ==================== TAB 2: DAFTAR SPK ====================
+with tab2:
+    st.subheader("Daftar Semua SPK")
+    # Daftar akan kita isi nanti
