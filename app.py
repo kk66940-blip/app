@@ -70,6 +70,7 @@ pages = [
     st.Page("pages/5_Laporan.py", title="Laporan", icon="🖨️"),
     st.Page("pages/6_AHSP.py", title="AHSP", icon="📊"),
     st.Page("pages/7_Pengeluaran.py", title="Pengeluaran", icon="💰"),   # ← Tambahkan ini
+    st.Page("pages/8_SPK.py", title="SPK Sub", icon="💰"),
 ]
 
 pg = st.navigation(pages)
