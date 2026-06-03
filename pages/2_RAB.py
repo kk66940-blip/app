@@ -714,85 +714,84 @@ if uploaded_file:
         with st.expander("Lihat Preview Data (10 baris pertama)", expanded=True):
             st.dataframe(df.head(10), use_container_width=True)
         
-        col_import1, col_import2 = st.columns(2)
-        
-        with col_import1:
-            replace_all = st.checkbox("Hapus semua data RAB lama sebelum import", value=True)
-        
-        with col_import2:
-            if st.button("🚀 Mulai Import", type="primary", use_container_width=True):
-                try:
-                    if replace_all:
-                        try:
-                            # Ambil semua ID rab_items milik proyek ini
-                            existing_rab = supabase.table("rab_items") \
-                                .select("id") \
-                                .eq("project_id", project_id) \
-                                .execute().data
-                            rab_ids = [item['id'] for item in existing_rab]
+        # Pilihan Mode Import
+        import_mode = st.radio(
+            "Pilih Mode Import:",
+            options=[
+                "➕ Tambah Data Baru (Append)",
+                "🔄 Ganti Semua Data (Replace All)"
+            ],
+            index=0,
+            horizontal=True
+        )
 
-                            if rab_ids:
-                                # Hapus data terkait berdasarkan rab_item_id
-                                supabase.table("opname_details").delete().in_("rab_item_id", rab_ids).execute()
-                                supabase.table("opname_sub_details").delete().in_("rab_item_id", rab_ids).execute()
-                                supabase.table("rap_items").delete().in_("rab_item_id", rab_ids).execute()
+        if st.button("🚀 Mulai Import", type="primary", use_container_width=True):
+            try:
+                # === MODE REPLACE ALL ===
+                if import_mode == "🔄 Ganti Semua Data (Replace All)":
+                    try:
+                        existing_rab = supabase.table("rab_items") \
+                            .select("id") \
+                            .eq("project_id", project_id) \
+                            .execute().data
+                        rab_ids = [item['id'] for item in existing_rab]
 
-                            # Baru hapus rab_items
-                            supabase.table("rab_items").delete().eq("project_id", project_id).execute()
-                            st.info("✅ Data RAB lama beserta RAP & Opname terkait berhasil dihapus.")
-                        except Exception as delete_error:
-                            st.error(f"Gagal menghapus data lama: {str(delete_error)}")
-                            st.stop()
-                    
-                    # Proses import dengan hierarchy berdasarkan Level
-                    inserted = 0
-                    parent_stack = {}  # level -> last inserted id
-                    
-                    for idx, row in df.iterrows():
-                        level = int(row.get('level', 0))
-                        code = str(row.get('code', '')).strip() if 'code' in row else ''
-                        description = str(row.get('description', '')).strip()
-                        unit = str(row.get('unit', '')).strip()
-                        volume = float(row.get('volume', 0) or 0)
-                        unit_price = float(row.get('unit_price', 0) or 0)
-                        
-                        if not description:
-                            continue
-                        
-                        # Tentukan parent_id berdasarkan level
-                        parent_id = parent_stack.get(level - 1) if level > 0 else None
-                        
-                        new_item = {
-                            "project_id": project_id,
-                            "level": level,
-                            "code": code,
-                            "description": description,
-                            "unit": unit,
-                            "volume": volume,
-                            "unit_price": unit_price,
-                            "parent_id": parent_id,
-                            "sort_order": idx + 1
-                        }
-                        
-                        res = supabase.table("rab_items").insert(new_item).execute()
-                        new_id = res.data[0]['id']
-                        
-                        # Simpan id untuk level ini (untuk child berikutnya)
-                        parent_stack[level] = new_id
-                        
-                        # Hapus level yang lebih dalam dari stack
-                        keys_to_remove = [k for k in parent_stack if k > level]
-                        for k in keys_to_remove:
-                            del parent_stack[k]
-                        
-                        inserted += 1
-                    
-                    st.success(f"✅ Berhasil import **{inserted} item** RAB!")
-                    st.balloons()
-                    st.rerun()
-                    
-                except Exception as e:
-                    st.error(f"Gagal melakukan import: {str(e)}")
+                        if rab_ids:
+                            supabase.table("opname_details").delete().in_("rab_item_id", rab_ids).execute()
+                            supabase.table("opname_sub_details").delete().in_("rab_item_id", rab_ids).execute()
+                            supabase.table("rap_items").delete().in_("rab_item_id", rab_ids).execute()
+
+                        supabase.table("rab_items").delete().eq("project_id", project_id).execute()
+                        st.info("✅ Data RAB lama beserta RAP & Opname terkait berhasil dihapus.")
+                    except Exception as delete_error:
+                        st.error(f"Gagal menghapus data lama: {str(delete_error)}")
+                        st.stop()
+
+                # === PROSES IMPORT (berlaku untuk kedua mode) ===
+                inserted = 0
+                parent_stack = {}
+
+                for idx, row in df.iterrows():
+                    level = int(row.get('level', 0))
+                    code = str(row.get('code', '')).strip() if 'code' in row else ''
+                    description = str(row.get('description', '')).strip()
+                    unit = str(row.get('unit', '')).strip()
+                    volume = float(row.get('volume', 0) or 0)
+                    unit_price = float(row.get('unit_price', 0) or 0)
+
+                    if not description:
+                        continue
+
+                    parent_id = parent_stack.get(level - 1) if level > 0 else None
+
+                    new_item = {
+                        "project_id": project_id,
+                        "level": level,
+                        "code": code,
+                        "description": description,
+                        "unit": unit,
+                        "volume": volume,
+                        "unit_price": unit_price,
+                        "parent_id": parent_id,
+                        "sort_order": idx + 1
+                    }
+
+                    res = supabase.table("rab_items").insert(new_item).execute()
+                    new_id = res.data[0]['id']
+                    parent_stack[level] = new_id
+
+                    keys_to_remove = [k for k in parent_stack if k > level]
+                    for k in keys_to_remove:
+                        del parent_stack[k]
+
+                    inserted += 1
+
+                st.success(f"✅ Berhasil import **{inserted} item** RAB!")
+                st.balloons()
+                st.rerun()
+
+            except Exception as e:
+                st.error(f"Gagal melakukan import: {str(e)}")
                     
     except Exception as e:
         st.error(f"Gagal membaca file Excel: {str(e)}")
