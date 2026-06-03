@@ -21,7 +21,18 @@ rab_items = supabase.table("rab_items")\
     .eq("project_id", project_id)\
     .order("level").order("sort_order").execute().data
 
-total_rab = sum((item.get('volume') or 0) * (item.get('unit_price') or 0) for item in rab_items)
+# Hitung total RAB hanya dari item leaf (tidak punya child)
+# supaya konsisten dengan export Excel & PDF
+from collections import defaultdict
+children_map = defaultdict(list)
+for item in rab_items:
+    children_map[item.get('parent_id')].append(item)
+
+total_rab = sum(
+    (item.get('volume') or 0) * (item.get('unit_price') or 0)
+    for item in rab_items
+    if len(children_map.get(item.get('id'), [])) == 0
+)
 
 # Opname Utama (RAB)
 opname_details = supabase.table("opname_details")\
