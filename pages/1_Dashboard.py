@@ -67,18 +67,22 @@ st.subheader("💰 Ringkasan RAB & Opname")
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    st.metric("Total RAB", format_rupiah(total_rab))
+    st.markdown("**Total RAB**")
+    st.markdown(f"<div style='font-size:22px; font-weight:bold; color:#0d6efd;'>{format_rupiah(total_rab)}</div>", unsafe_allow_html=True)
 
 with col2:
     progress = (total_opname / total_rab * 100) if total_rab > 0 else 0
-    st.metric("Total Opname (RAB)", format_rupiah(total_opname), 
-              delta=f"{progress:.1f}%")
+    st.markdown("**Total Opname (RAB)**")
+    st.markdown(f"<div style='font-size:22px; font-weight:bold;'>{format_rupiah(total_opname)}</div>", unsafe_allow_html=True)
+    st.caption(f"📈 {progress:.1f}% dari RAB")
 
 with col3:
-    st.metric("Sisa Penagihan", format_rupiah(sisa_penagihan))
+    st.markdown("**Sisa Penagihan**")
+    st.markdown(f"<div style='font-size:22px; font-weight:bold; color:#dc3545;'>{format_rupiah(sisa_penagihan)}</div>", unsafe_allow_html=True)
 
 with col4:
-    st.metric("Jumlah Periode", f"{period_count} Periode")
+    st.markdown("**Jumlah Periode**")
+    st.markdown(f"<div style='font-size:22px; font-weight:bold;'>{period_count} Periode</div>", unsafe_allow_html=True)
 
 st.divider()
 
