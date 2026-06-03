@@ -426,7 +426,7 @@ def export_rab_excel_hierarchical(rab_items, project_name):
 
         else:  # type == 'item'
             ws.cell(row=row_num, column=1, value=row['number']).border = thin_border
-            ws.cell(row=row_num, column=2, value=f"    {row['number']}. {row['description']}").border = thin_border
+            ws.cell(row=row_num, column=2, value=f"    {row['description']}").border = thin_border
             ws.cell(row=row_num, column=3, value=row['unit']).border = thin_border
             ws.cell(row=row_num, column=4, value=row['volume']).border = thin_border
             ws.cell(row=row_num, column=5, value=row['price']).border = thin_border
@@ -546,7 +546,7 @@ def export_rab_pdf_hierarchical(rab_items, project_name):
 
             table_data.append([
                 current_no,
-                Paragraph(f"    {current_no}. {node.get('description', '')}", normal),
+                Paragraph(f"    {node.get('description', '')}", normal),
                 node.get('unit', ''),
                 f"{vol:,.2f}",
                 f"{price:,.0f}",
