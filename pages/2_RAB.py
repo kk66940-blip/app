@@ -535,7 +535,12 @@ def export_rab_pdf_hierarchical(rab_items, project_name):
             
             # Subtotal row
             subtotal_row_indices.append(current_row)
-            table_data.append(["", Paragraph("<b>SUBTOTAL</b>", subtotal_style), "", "", "", f"<b>{sub_total:,.0f}</b>"])
+            table_data.append([
+                "", 
+                Paragraph("<b>SUBTOTAL</b>", subtotal_style), 
+                "", "", "", 
+                Paragraph(f"<b>{sub_total:,.0f}</b>", subtotal_style)
+            ])
             current_row += 1
             return sub_total
         else:
@@ -560,7 +565,12 @@ def export_rab_pdf_hierarchical(rab_items, project_name):
 
     # Grand Total
     grand_total_row_index = current_row
-    table_data.append(["", Paragraph("<b>GRAND TOTAL</b>", grand_style), "", "", "", f"<b>{grand_total:,.0f}</b>"])
+    table_data.append([
+        "", 
+        Paragraph("<b>GRAND TOTAL</b>", grand_style), 
+        "", "", "", 
+        Paragraph(f"<b>{grand_total:,.0f}</b>", grand_style)
+    ])
 
     # Column widths (balanced for readability)
     col_widths = [1.0*cm, 8.0*cm, 1.1*cm, 1.7*cm, 2.6*cm, 2.8*cm]
