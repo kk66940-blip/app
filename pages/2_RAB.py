@@ -265,25 +265,102 @@ if "edit_item" in st.session_state:
 
 st.divider()
 
-# ==================== EXPORT FUNCTIONS (HIRARKIS LENGKAP) ====================
+# ==================== EXPORT FUNCTIONS - MULTI LEVEL TREE (FIXED) ====================
+
+def build_tree(items):
+    """Membangun struktur tree dari flat list berdasarkan parent_id"""
+    children_map = defaultdict(list)
+    for item in items:
+        children_map[item.get('parent_id')].append(item)
+    
+    # Sort setiap level berdasarkan sort_order
+    for pid in children_map:
+        children_map[pid] = sorted(children_map[pid], key=lambda x: (x.get('sort_order', 0), x.get('id', 0)))
+    
+    return children_map
+
+
+def process_tree_for_export(node, children_map, current_path, row_data, grand_total):
+    """
+    Rekursif memproses tree untuk export.
+    - Jika node punya anak → dijadikan HEADER (hijau)
+    - Jika node tidak punya anak → dijadikan baris data biasa
+    """
+    node_id = node['id']
+    children = children_map.get(node_id, [])
+    has_children = len(children) > 0
+
+    # Buat nomor hierarkis saat ini
+    current_number = ".".join(map(str, current_path))
+
+    if has_children:
+        # === HEADER / MAIN ITEM (punya sub) ===
+        row_data.append({
+            'type': 'header',
+            'number': current_number,
+            'description': node.get('description', ''),
+            'unit': '',
+            'volume': 0,
+            'price': 0,
+            'total': 0
+        })
+        
+        # Proses anak-anaknya
+        sub_total = 0
+        for idx, child in enumerate(children, 1):
+            new_path = current_path + [idx]
+            child_result = process_tree_for_export(child, children_map, new_path, [], 0)
+            
+            # Tambahkan baris anak
+            for r in child_result['rows']:
+                row_data.append(r)
+            
+            sub_total += child_result['subtotal']
+        
+        # Tambahkan subtotal setelah semua anak
+        row_data.append({
+            'type': 'subtotal',
+            'number': '',
+            'description': 'SUBTOTAL',
+            'unit': '',
+            'volume': 0,
+            'price': 0,
+            'total': sub_total
+        })
+        
+        return {'rows': row_data, 'subtotal': sub_total}
+    
+    else:
+        # === LEAF ITEM (tidak punya anak) ===
+        vol = node.get('volume', 0) or 0
+        price = node.get('unit_price', 0) or 0
+        total = vol * price
+        
+        row_data.append({
+            'type': 'item',
+            'number': current_number,
+            'description': node.get('description', ''),
+            'unit': node.get('unit', ''),
+            'volume': vol,
+            'price': price,
+            'total': total
+        })
+        
+        return {'rows': row_data, 'subtotal': total}
+
 
 def export_rab_excel_hierarchical(rab_items, project_name):
-    """Export RAB dengan struktur hirarkis yang jelas (Main Item + Sub Item + Subtotal)"""
+    """Export RAB dengan dukungan multi-level hierarchy (Main → Sub → Sub-Sub)"""
     if not rab_items:
         st.warning("Tidak ada data RAB untuk diekspor.")
         return
 
-    # Grouping hierarkis
-    children_map = defaultdict(list)
-    for item in rab_items:
-        children_map[item.get('parent_id')].append(item)
+    children_map = build_tree(rab_items)
 
-    # Deteksi Main Item (konsisten dengan halaman Laporan)
-    main_items = [
-        item for item in rab_items 
-        if item.get('level', 0) == 0 or 
-           (item.get('volume', 0) == 0 and "pekerjaan" in item.get('description', '').lower())
-    ]
+    # Ambil root items (yang tidak punya parent atau parent-nya tidak ada di data)
+    all_ids = {item['id'] for item in rab_items}
+    root_items = [item for item in rab_items if item.get('parent_id') is None or item.get('parent_id') not in all_ids]
+    root_items = sorted(root_items, key=lambda x: (x.get('sort_order', 0), x.get('id', 0)))
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -292,16 +369,14 @@ def export_rab_excel_hierarchical(rab_items, project_name):
     # Styling
     header_fill = PatternFill(start_color="0d6efd", end_color="0d6efd", fill_type="solid")
     header_font = Font(bold=True, color="FFFFFF", size=11)
-    main_fill = PatternFill(start_color="28a745", end_color="28a745", fill_type="solid")
-    main_font = Font(bold=True, color="FFFFFF", size=11)
+    section_fill = PatternFill(start_color="28a745", end_color="28a745", fill_type="solid")
+    section_font = Font(bold=True, color="FFFFFF", size=11)
     subtotal_fill = PatternFill(start_color="fff3cd", end_color="fff3cd", fill_type="solid")
     grand_fill = PatternFill(start_color="d4edda", end_color="d4edda", fill_type="solid")
-    thin_border = Border(
-        left=Side(style='thin'), right=Side(style='thin'),
-        top=Side(style='thin'), bottom=Side(style='thin')
-    )
+    thin_border = Border(left=Side(style='thin'), right=Side(style='thin'),
+                         top=Side(style='thin'), bottom=Side(style='thin'))
 
-    # Judul
+    # Header
     ws.merge_cells('A1:F1')
     ws['A1'] = f"RENCANA ANGGARAN BIAYA (RAB) - {project_name}"
     ws['A1'].font = Font(bold=True, size=14, color="0d6efd")
@@ -311,7 +386,6 @@ def export_rab_excel_hierarchical(rab_items, project_name):
     ws['A2'] = f"Tanggal Export: {datetime.now().strftime('%d %B %Y')}"
     ws['A2'].font = Font(italic=True, size=10)
 
-    # Header
     headers = ["No", "Uraian Pekerjaan", "Satuan", "Volume", "Harga Satuan (Rp)", "Jumlah (Rp)"]
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=4, column=col, value=header)
@@ -321,55 +395,47 @@ def export_rab_excel_hierarchical(rab_items, project_name):
         cell.border = thin_border
 
     row_num = 5
-    item_no = 1
     grand_total = 0
+    all_rows = []
 
-    for main_item in main_items:
-        main_id = main_item['id']
-        main_desc = main_item.get('description', '')
+    # Proses setiap root item secara rekursif
+    for idx, root in enumerate(root_items, 1):
+        result = process_tree_for_export(root, children_map, [idx], [], 0)
+        all_rows.extend(result['rows'])
+        grand_total += result['subtotal']
 
-        # Baris Main Item (Hijau + Merge)
-        ws.merge_cells(start_row=row_num, start_column=1, end_row=row_num, end_column=6)
-        cell = ws.cell(row=row_num, column=1, value=f"▶ {main_desc}")
-        cell.font = main_font
-        cell.fill = main_fill
-        for col in range(1, 7):
-            ws.cell(row=row_num, column=col).border = thin_border
-            ws.cell(row=row_num, column=col).fill = main_fill
-        row_num += 1
+    # Tulis ke Excel
+    for row in all_rows:
+        if row['type'] == 'header':
+            # Section Header (Hijau)
+            ws.merge_cells(start_row=row_num, start_column=1, end_row=row_num, end_column=6)
+            cell = ws.cell(row=row_num, column=1, value=f"▶ {row['description']}")
+            cell.font = section_font
+            cell.fill = section_fill
+            for c in range(1, 7):
+                ws.cell(row=row_num, column=c).border = thin_border
+                ws.cell(row=row_num, column=c).fill = section_fill
 
-        main_subtotal = 0
+        elif row['type'] == 'subtotal':
+            ws.cell(row=row_num, column=2, value="SUBTOTAL").font = Font(bold=True)
+            ws.cell(row=row_num, column=6, value=row['total']).font = Font(bold=True)
+            ws.cell(row=row_num, column=6).number_format = '#,##0'
+            for c in range(1, 7):
+                ws.cell(row=row_num, column=c).border = thin_border
+                ws.cell(row=row_num, column=c).fill = subtotal_fill
 
-        # Sub Items
-        for child in children_map.get(main_id, []):
-            vol = child.get('volume', 0) or 0
-            price = child.get('unit_price', 0) or 0
-            total = vol * price
-            main_subtotal += total
-            grand_total += total
-
-            ws.cell(row=row_num, column=1, value=item_no).border = thin_border
-            ws.cell(row=row_num, column=2, value=f"    {item_no}. {child.get('description', '')}").border = thin_border
-            ws.cell(row=row_num, column=3, value=child.get('unit', '')).border = thin_border
-            ws.cell(row=row_num, column=4, value=vol).border = thin_border
-            ws.cell(row=row_num, column=5, value=price).border = thin_border
-            ws.cell(row=row_num, column=6, value=total).border = thin_border
+        else:  # type == 'item'
+            ws.cell(row=row_num, column=1, value=row['number']).border = thin_border
+            ws.cell(row=row_num, column=2, value=f"    {row['number']}. {row['description']}").border = thin_border
+            ws.cell(row=row_num, column=3, value=row['unit']).border = thin_border
+            ws.cell(row=row_num, column=4, value=row['volume']).border = thin_border
+            ws.cell(row=row_num, column=5, value=row['price']).border = thin_border
+            ws.cell(row=row_num, column=6, value=row['total']).border = thin_border
 
             ws.cell(row=row_num, column=4).number_format = '#,##0.00'
             ws.cell(row=row_num, column=5).number_format = '#,##0'
             ws.cell(row=row_num, column=6).number_format = '#,##0'
 
-            item_no += 1
-            row_num += 1
-
-        # Subtotal per Main Item
-        ws.cell(row=row_num, column=2, value="SUBTOTAL").font = Font(bold=True)
-        ws.cell(row=row_num, column=6, value=main_subtotal).font = Font(bold=True)
-        ws.cell(row=row_num, column=6).fill = subtotal_fill
-        ws.cell(row=row_num, column=6).number_format = '#,##0'
-        for col in range(1, 7):
-            ws.cell(row=row_num, column=col).border = thin_border
-            ws.cell(row=row_num, column=col).fill = subtotal_fill
         row_num += 1
 
     # Grand Total
@@ -378,53 +444,47 @@ def export_rab_excel_hierarchical(rab_items, project_name):
     ws.cell(row=row_num, column=2, value="GRAND TOTAL").font = Font(bold=True, size=11)
     ws.cell(row=row_num, column=2).fill = grand_fill
     ws.cell(row=row_num, column=2).alignment = Alignment(horizontal='right')
-
     ws.cell(row=row_num, column=6, value=grand_total).font = Font(bold=True, size=11)
     ws.cell(row=row_num, column=6).fill = grand_fill
     ws.cell(row=row_num, column=6).number_format = '#,##0'
-    for col in range(2, 7):
-        ws.cell(row=row_num, column=col).border = thin_border
-        ws.cell(row=row_num, column=col).fill = grand_fill
+    for c in range(2, 7):
+        ws.cell(row=row_num, column=c).border = thin_border
+        ws.cell(row=row_num, column=c).fill = grand_fill
 
     # Lebar kolom
-    ws.column_dimensions['A'].width = 6
-    ws.column_dimensions['B'].width = 52
+    ws.column_dimensions['A'].width = 8
+    ws.column_dimensions['B'].width = 55
     ws.column_dimensions['C'].width = 10
     ws.column_dimensions['D'].width = 12
     ws.column_dimensions['E'].width = 18
     ws.column_dimensions['F'].width = 18
 
-    # Download
     output = BytesIO()
     wb.save(output)
     output.seek(0)
 
     filename = f"RAB_{project_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.xlsx"
     st.download_button(
-        label="⬇️ Download File Excel (Format Hirarkis Lengkap)",
+        label="⬇️ Download Excel (Multi-Level Hierarchy)",
         data=output,
         file_name=filename,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True
     )
-    st.success("✅ Export RAB ke Excel berhasil! Struktur hirarkis sudah ditampilkan dengan benar.")
+    st.success("✅ Export berhasil dengan struktur multi-level (Main → Sub → Detail)!")
 
 
 def export_rab_pdf_hierarchical(rab_items, project_name):
-    """Export RAB ke PDF dengan tampilan hirarkis yang rapi"""
+    """Export RAB ke PDF dengan dukungan multi-level hierarchy"""
     if not rab_items:
         st.warning("Tidak ada data RAB untuk diekspor.")
         return
 
-    children_map = defaultdict(list)
-    for item in rab_items:
-        children_map[item.get('parent_id')].append(item)
+    children_map = build_tree(rab_items)
 
-    main_items = [
-        item for item in rab_items 
-        if item.get('level', 0) == 0 or 
-           (item.get('volume', 0) == 0 and "pekerjaan" in item.get('description', '').lower())
-    ]
+    all_ids = {item['id'] for item in rab_items}
+    root_items = [item for item in rab_items if item.get('parent_id') is None or item.get('parent_id') not in all_ids]
+    root_items = sorted(root_items, key=lambda x: (x.get('sort_order', 0), x.get('id', 0)))
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4,
@@ -432,53 +492,72 @@ def export_rab_pdf_hierarchical(rab_items, project_name):
                             topMargin=1.5*cm, bottomMargin=1.5*cm)
 
     styles = getSampleStyleSheet()
-    normal = ParagraphStyle('Normal', parent=styles['Normal'], fontSize=9)
-    title_style = ParagraphStyle('Title', parent=styles['Normal'], fontSize=14, fontName='Helvetica-Bold', textColor=colors.HexColor('#0d6efd'))
-    main_style = ParagraphStyle('Main', parent=styles['Normal'], fontSize=9, fontName='Helvetica-Bold', textColor=colors.HexColor('#2E7D32'))
+    normal = ParagraphStyle('Normal', parent=styles['Normal'], fontSize=8)
+    title_style = ParagraphStyle('Title', parent=styles['Normal'], fontSize=13, fontName='Helvetica-Bold', textColor=colors.HexColor('#0d6efd'))
+    header_style = ParagraphStyle('Header', parent=styles['Normal'], fontSize=9, fontName='Helvetica-Bold', textColor=colors.white)
+    subtotal_style = ParagraphStyle('Subtotal', parent=styles['Normal'], fontSize=8, fontName='Helvetica-Bold')
 
     elements = []
     elements.append(Paragraph("RENCANA ANGGARAN BIAYA (RAB)", title_style))
     elements.append(Paragraph(f"<b>Proyek:</b> {project_name}", normal))
     elements.append(Paragraph(f"<b>Tanggal:</b> {datetime.now().strftime('%d %B %Y')}", normal))
-    elements.append(Spacer(1, 0.4*cm))
+    elements.append(Spacer(1, 0.3*cm))
 
     table_data = [["No", "Uraian Pekerjaan", "Sat", "Vol", "Harga (Rp)", "Jumlah (Rp)"]]
-    item_no = 1
     grand_total = 0
 
-    for main_item in main_items:
-        main_id = main_item['id']
-        table_data.append(["", Paragraph(f"▶ {main_item.get('description', '')}", main_style), "", "", "", ""])
+    def add_to_pdf(node, path, children_map):
+        nonlocal grand_total
+        node_id = node['id']
+        children = children_map.get(node_id, [])
+        has_children = len(children) > 0
+        current_no = ".".join(map(str, path))
 
-        for child in children_map.get(main_id, []):
-            vol = child.get('volume', 0) or 0
-            price = child.get('unit_price', 0) or 0
+        if has_children:
+            # Header
+            table_data.append(["", Paragraph(f"▶ {node.get('description', '')}", header_style), "", "", "", ""])
+            
+            sub_total = 0
+            for idx, child in enumerate(children, 1):
+                new_path = path + [idx]
+                child_total = add_to_pdf(child, new_path, children_map)
+                sub_total += child_total
+            
+            table_data.append(["", Paragraph("<b>SUBTOTAL</b>", subtotal_style), "", "", "", f"<b>{sub_total:,.0f}</b>"])
+            return sub_total
+        else:
+            vol = node.get('volume', 0) or 0
+            price = node.get('unit_price', 0) or 0
             total = vol * price
             grand_total += total
 
             table_data.append([
-                str(item_no),
-                Paragraph(f"    {item_no}. {child.get('description', '')}", normal),
-                child.get('unit', ''),
+                current_no,
+                Paragraph(f"    {current_no}. {node.get('description', '')}", normal),
+                node.get('unit', ''),
                 f"{vol:,.2f}",
                 f"{price:,.0f}",
                 f"{total:,.0f}"
             ])
-            item_no += 1
+            return total
+
+    for idx, root in enumerate(root_items, 1):
+        add_to_pdf(root, [idx], children_map)
 
     table_data.append(["", "GRAND TOTAL", "", "", "", f"{grand_total:,.0f}"])
 
-    t = Table(table_data, colWidths=[1*cm, 7.5*cm, 1.3*cm, 2*cm, 3*cm, 3*cm])
+    t = Table(table_data, colWidths=[1.1*cm, 7.8*cm, 1.2*cm, 1.8*cm, 2.8*cm, 2.8*cm])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0d6efd')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 8),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('FONTSIZE', (0, 0), (-1, -1), 7),
+        ('GRID', (0, 0), (-1, -1), 0.4, colors.grey),
         ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#d4edda')),
         ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('ALIGN', (3, 1), (-1, -1), 'RIGHT'),
+        ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#28a745')),  # first header row
     ]))
     elements.append(t)
 
@@ -487,13 +566,13 @@ def export_rab_pdf_hierarchical(rab_items, project_name):
 
     filename = f"RAB_{project_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf"
     st.download_button(
-        label="⬇️ Download RAB PDF (Format Hirarkis)",
+        label="⬇️ Download PDF (Multi-Level Hierarchy)",
         data=buffer,
         file_name=filename,
         mime="application/pdf",
         use_container_width=True
     )
-    st.success("✅ Export RAB ke PDF berhasil!")
+    st.success("✅ Export PDF multi-level berhasil!")
 
 
 # ==================== TOMBOL EXPORT ====================
