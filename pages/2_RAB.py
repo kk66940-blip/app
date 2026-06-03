@@ -640,3 +640,133 @@ with col1:
 with col2:
     if st.button("🖨️ Export ke PDF", type="primary", use_container_width=True):
         export_rab_pdf_hierarchical(all_rab_items, project_name)
+
+
+# ==================== IMPORT RAB DARI EXCEL ====================
+st.divider()
+st.subheader("📥 Import RAB dari Excel")
+
+with st.expander("📋 Petunjuk Format Excel yang Didukung", expanded=False):
+    st.markdown("""
+    **Kolom yang wajib ada:**
+    - `Level` → 0 = Main Item, 1 = Sub Item, 2 = Detail, dst.
+    - `Uraian Pekerjaan`
+    - `Satuan`
+    - `Volume`
+    - `Harga Satuan`
+
+    **Kolom opsional:**
+    - `Kode`
+
+    **Contoh:**
+    | Level | Kode   | Uraian Pekerjaan              | Satuan | Volume | Harga Satuan |
+    |-------|--------|-------------------------------|--------|--------|--------------|
+    | 0     | A.1    | Pekerjaan Struktur            | -      | 0      | 0            |
+    | 1     | A.1.1  | Beton Bertulang               | m³     | 120    | 1.250.000    |
+    | 2     | A.1.1.1| Beton K-300                   | m³     | 85     | 1.350.000    |
+    """)
+
+uploaded_file = st.file_uploader(
+    "Pilih file Excel (.xlsx)", 
+    type=["xlsx"], 
+    key="import_rab_excel"
+)
+
+if uploaded_file:
+    try:
+        import pandas as pd
+        
+        df = pd.read_excel(uploaded_file)
+        
+        # Normalisasi nama kolom
+        df.columns = [str(c).strip().lower() for c in df.columns]
+        
+        required_cols = ['level', 'uraian pekerjaan', 'satuan', 'volume', 'harga satuan']
+        missing = [col for col in required_cols if col not in df.columns]
+        
+        if missing:
+            st.error(f"Kolom yang wajib tidak ditemukan: {missing}")
+            st.stop()
+        
+        # Rename untuk kemudahan
+        column_mapping = {
+            'level': 'level',
+            'uraian pekerjaan': 'description',
+            'satuan': 'unit',
+            'volume': 'volume',
+            'harga satuan': 'unit_price',
+            'kode': 'code'
+        }
+        
+        df = df.rename(columns=column_mapping)
+        
+        st.success(f"✅ Berhasil membaca **{len(df)} baris** data dari Excel.")
+        
+        # Preview
+        with st.expander("Lihat Preview Data (10 baris pertama)", expanded=True):
+            st.dataframe(df.head(10), use_container_width=True)
+        
+        col_import1, col_import2 = st.columns(2)
+        
+        with col_import1:
+            replace_all = st.checkbox("Hapus semua data RAB lama sebelum import", value=True)
+        
+        with col_import2:
+            if st.button("🚀 Mulai Import", type="primary", use_container_width=True):
+                try:
+                    if replace_all:
+                        supabase.table("rab_items").delete().eq("project_id", project_id).execute()
+                        st.info("Data RAB lama telah dihapus.")
+                    
+                    # Proses import dengan hierarchy berdasarkan Level
+                    inserted = 0
+                    parent_stack = {}  # level -> last inserted id
+                    
+                    for idx, row in df.iterrows():
+                        level = int(row.get('level', 0))
+                        code = str(row.get('code', '')).strip() if 'code' in row else ''
+                        description = str(row.get('description', '')).strip()
+                        unit = str(row.get('unit', '')).strip()
+                        volume = float(row.get('volume', 0) or 0)
+                        unit_price = float(row.get('unit_price', 0) or 0)
+                        
+                        if not description:
+                            continue
+                        
+                        # Tentukan parent_id berdasarkan level
+                        parent_id = parent_stack.get(level - 1) if level > 0 else None
+                        
+                        new_item = {
+                            "project_id": project_id,
+                            "level": level,
+                            "code": code,
+                            "description": description,
+                            "unit": unit,
+                            "volume": volume,
+                            "unit_price": unit_price,
+                            "parent_id": parent_id,
+                            "sort_order": idx + 1
+                        }
+                        
+                        res = supabase.table("rab_items").insert(new_item).execute()
+                        new_id = res.data[0]['id']
+                        
+                        # Simpan id untuk level ini (untuk child berikutnya)
+                        parent_stack[level] = new_id
+                        
+                        # Hapus level yang lebih dalam dari stack
+                        keys_to_remove = [k for k in parent_stack if k > level]
+                        for k in keys_to_remove:
+                            del parent_stack[k]
+                        
+                        inserted += 1
+                    
+                    st.success(f"✅ Berhasil import **{inserted} item** RAB!")
+                    st.balloons()
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"Gagal melakukan import: {str(e)}")
+                    
+    except Exception as e:
+        st.error(f"Gagal membaca file Excel: {str(e)}")
