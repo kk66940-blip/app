@@ -1,0 +1,20 @@
+# ==========================================
+# Streamlit App - Requirements
+# ==========================================
+
+# Core Framework
+streamlit
+
+# Data Processing
+pandas
+openpyxl
+
+# Visualization
+plotly
+
+# Database (Supabase)
+supabase
+st-supabase-connection
+
+# PDF Generation (untuk halaman Opname)
+reportlab
