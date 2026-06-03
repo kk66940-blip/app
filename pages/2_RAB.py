@@ -475,7 +475,7 @@ def export_rab_excel_hierarchical(rab_items, project_name):
 
 
 def export_rab_pdf_hierarchical(rab_items, project_name):
-    """Export RAB ke PDF dengan dukungan multi-level hierarchy"""
+    """Export RAB ke PDF dengan tampilan rapih multi-level hierarchy (matching Excel quality)"""
     if not rab_items:
         st.warning("Tidak ada data RAB untuk diekspor.")
         return
@@ -488,34 +488,44 @@ def export_rab_pdf_hierarchical(rab_items, project_name):
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4,
-                            rightMargin=1.5*cm, leftMargin=1.5*cm,
-                            topMargin=1.5*cm, bottomMargin=1.5*cm)
+                            rightMargin=1.2*cm, leftMargin=1.2*cm,
+                            topMargin=1.2*cm, bottomMargin=1.2*cm)
 
     styles = getSampleStyleSheet()
-    normal = ParagraphStyle('Normal', parent=styles['Normal'], fontSize=8)
-    title_style = ParagraphStyle('Title', parent=styles['Normal'], fontSize=13, fontName='Helvetica-Bold', textColor=colors.HexColor('#0d6efd'))
-    header_style = ParagraphStyle('Header', parent=styles['Normal'], fontSize=9, fontName='Helvetica-Bold', textColor=colors.white)
-    subtotal_style = ParagraphStyle('Subtotal', parent=styles['Normal'], fontSize=8, fontName='Helvetica-Bold')
+    normal = ParagraphStyle('Normal', parent=styles['Normal'], fontSize=8, leading=10)
+    title_style = ParagraphStyle('Title', parent=styles['Normal'], fontSize=14, fontName='Helvetica-Bold', textColor=colors.HexColor('#0d6efd'))
+    header_style = ParagraphStyle('Header', parent=styles['Normal'], fontSize=9, fontName='Helvetica-Bold', textColor=colors.white, leading=11)
+    subtotal_style = ParagraphStyle('Subtotal', parent=styles['Normal'], fontSize=8, fontName='Helvetica-Bold', leading=10)
+    grand_style = ParagraphStyle('Grand', parent=styles['Normal'], fontSize=9, fontName='Helvetica-Bold', leading=11)
 
     elements = []
     elements.append(Paragraph("RENCANA ANGGARAN BIAYA (RAB)", title_style))
     elements.append(Paragraph(f"<b>Proyek:</b> {project_name}", normal))
     elements.append(Paragraph(f"<b>Tanggal:</b> {datetime.now().strftime('%d %B %Y')}", normal))
-    elements.append(Spacer(1, 0.3*cm))
+    elements.append(Spacer(1, 0.25*cm))
 
     table_data = [["No", "Uraian Pekerjaan", "Sat", "Vol", "Harga (Rp)", "Jumlah (Rp)"]]
+    
+    # Track row indices for styling
+    header_row_indices = []      # rows that are section headers (green)
+    subtotal_row_indices = []    # rows that are SUBTOTAL (yellow)
+    grand_total_row_index = None
+
     grand_total = 0
+    current_row = 1  # start after header row (row 0)
 
     def add_to_pdf(node, path, children_map):
-        nonlocal grand_total
+        nonlocal grand_total, current_row
         node_id = node['id']
         children = children_map.get(node_id, [])
         has_children = len(children) > 0
         current_no = ".".join(map(str, path))
 
         if has_children:
-            # Header
+            # Header row (will be styled green)
+            header_row_indices.append(current_row)
             table_data.append(["", Paragraph(f"▶ {node.get('description', '')}", header_style), "", "", "", ""])
+            current_row += 1
             
             sub_total = 0
             for idx, child in enumerate(children, 1):
@@ -523,7 +533,10 @@ def export_rab_pdf_hierarchical(rab_items, project_name):
                 child_total = add_to_pdf(child, new_path, children_map)
                 sub_total += child_total
             
+            # Subtotal row
+            subtotal_row_indices.append(current_row)
             table_data.append(["", Paragraph("<b>SUBTOTAL</b>", subtotal_style), "", "", "", f"<b>{sub_total:,.0f}</b>"])
+            current_row += 1
             return sub_total
         else:
             vol = node.get('volume', 0) or 0
@@ -539,26 +552,57 @@ def export_rab_pdf_hierarchical(rab_items, project_name):
                 f"{price:,.0f}",
                 f"{total:,.0f}"
             ])
+            current_row += 1
             return total
 
     for idx, root in enumerate(root_items, 1):
         add_to_pdf(root, [idx], children_map)
 
-    table_data.append(["", "GRAND TOTAL", "", "", "", f"{grand_total:,.0f}"])
+    # Grand Total
+    grand_total_row_index = current_row
+    table_data.append(["", Paragraph("<b>GRAND TOTAL</b>", grand_style), "", "", "", f"<b>{grand_total:,.0f}</b>"])
 
-    t = Table(table_data, colWidths=[1.1*cm, 7.8*cm, 1.2*cm, 1.8*cm, 2.8*cm, 2.8*cm])
-    t.setStyle(TableStyle([
+    # Column widths (balanced for readability)
+    col_widths = [1.0*cm, 8.0*cm, 1.1*cm, 1.7*cm, 2.6*cm, 2.8*cm]
+    t = Table(table_data, colWidths=col_widths, repeatRows=1)
+
+    # Build dynamic style commands
+    style_commands = [
+        # Header row (blue)
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0d6efd')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 7),
-        ('GRID', (0, 0), (-1, -1), 0.4, colors.grey),
-        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#d4edda')),
-        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 8),
+        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('ALIGN', (3, 1), (-1, -1), 'RIGHT'),
-        ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#28a745')),  # first header row
-    ]))
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cccccc')),
+        ('FONTSIZE', (0, 1), (-1, -1), 7.5),
+        ('ALIGN', (3, 1), (3, -1), 'RIGHT'),  # Vol
+        ('ALIGN', (4, 1), (5, -1), 'RIGHT'),  # Harga & Jumlah
+        ('LEFTPADDING', (0, 0), (-1, -1), 3),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+    ]
+
+    # Green background for all header rows (▶ section headers)
+    for row_idx in header_row_indices:
+        style_commands.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor('#28a745')))
+        style_commands.append(('TEXTCOLOR', (0, row_idx), (-1, row_idx), colors.white))
+        style_commands.append(('FONTNAME', (0, row_idx), (-1, row_idx), 'Helvetica-Bold'))
+
+    # Yellow background + bold for SUBTOTAL rows
+    for row_idx in subtotal_row_indices:
+        style_commands.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor('#fff3cd')))
+        style_commands.append(('FONTNAME', (0, row_idx), (-1, row_idx), 'Helvetica-Bold'))
+
+    # Green background for GRAND TOTAL
+    if grand_total_row_index:
+        style_commands.append(('BACKGROUND', (0, grand_total_row_index), (-1, grand_total_row_index), colors.HexColor('#d4edda')))
+        style_commands.append(('FONTNAME', (0, grand_total_row_index), (-1, grand_total_row_index), 'Helvetica-Bold'))
+        style_commands.append(('FONTSIZE', (0, grand_total_row_index), (-1, grand_total_row_index), 9))
+
+    t.setStyle(TableStyle(style_commands))
     elements.append(t)
 
     doc.build(elements)
@@ -566,13 +610,13 @@ def export_rab_pdf_hierarchical(rab_items, project_name):
 
     filename = f"RAB_{project_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf"
     st.download_button(
-        label="⬇️ Download PDF (Multi-Level Hierarchy)",
+        label="⬇️ Download PDF (Rapih & Multi-Level)",
         data=buffer,
         file_name=filename,
         mime="application/pdf",
         use_container_width=True
     )
-    st.success("✅ Export PDF multi-level berhasil!")
+    st.success("✅ Export PDF sudah lebih rapih dengan warna header hijau, subtotal kuning, dan formatting profesional!")
 
 
 # ==================== TOMBOL EXPORT ====================
