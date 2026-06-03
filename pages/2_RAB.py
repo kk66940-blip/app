@@ -678,27 +678,35 @@ if uploaded_file:
         
         df = pd.read_excel(uploaded_file)
         
-        # Normalisasi nama kolom
-        df.columns = [str(c).strip().lower() for c in df.columns]
+        # Normalisasi nama kolom (lebih fleksibel)
+        original_columns = df.columns.tolist()
+        df.columns = [str(c).strip().lower().replace("(", "").replace(")", "").replace("rp", "").strip() for c in df.columns]
         
-        required_cols = ['level', 'uraian pekerjaan', 'satuan', 'volume', 'harga satuan']
+        # Mapping kolom yang fleksibel
+        column_mapping = {}
+        for col in df.columns:
+            if col in ['level', 'lvl']:
+                column_mapping[col] = 'level'
+            elif col in ['uraian pekerjaan', 'uraian', 'deskripsi', 'description', 'pekerjaan']:
+                column_mapping[col] = 'description'
+            elif col in ['satuan', 'unit', 'sat']:
+                column_mapping[col] = 'unit'
+            elif col in ['volume', 'vol']:
+                column_mapping[col] = 'volume'
+            elif col in ['harga satuan', 'harga', 'unit price', 'hargasatuan']:
+                column_mapping[col] = 'unit_price'
+            elif col in ['kode', 'code', 'kd']:
+                column_mapping[col] = 'code'
+        
+        df = df.rename(columns=column_mapping)
+        
+        required_cols = ['level', 'description', 'unit', 'volume', 'unit_price']
         missing = [col for col in required_cols if col not in df.columns]
         
         if missing:
             st.error(f"Kolom yang wajib tidak ditemukan: {missing}")
+            st.info(f"Kolom yang terbaca: {list(df.columns)}")
             st.stop()
-        
-        # Rename untuk kemudahan
-        column_mapping = {
-            'level': 'level',
-            'uraian pekerjaan': 'description',
-            'satuan': 'unit',
-            'volume': 'volume',
-            'harga satuan': 'unit_price',
-            'kode': 'code'
-        }
-        
-        df = df.rename(columns=column_mapping)
         
         st.success(f"✅ Berhasil membaca **{len(df)} baris** data dari Excel.")
         
