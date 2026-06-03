@@ -676,10 +676,10 @@ if uploaded_file:
     try:
         import pandas as pd
         
-        df = pd.read_excel(uploaded_file)
+        # Baca file Excel, gunakan baris ke-4 sebagai header (header=3 karena 0-indexed)
+        df = pd.read_excel(uploaded_file, header=3)
         
         # Normalisasi nama kolom (lebih fleksibel)
-        original_columns = df.columns.tolist()
         df.columns = [str(c).strip().lower().replace("(", "").replace(")", "").replace("rp", "").strip() for c in df.columns]
         
         # Mapping kolom yang fleksibel
