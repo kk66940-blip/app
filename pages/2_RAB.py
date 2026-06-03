@@ -724,11 +724,19 @@ if uploaded_file:
                 try:
                     if replace_all:
                         try:
-                            # Hapus data terkait terlebih dahulu untuk menghindari foreign key error
-                            supabase.table("rap_items").delete().eq("project_id", project_id).execute()
-                            supabase.table("opname_details").delete().eq("project_id", project_id).execute()
-                            supabase.table("opname_sub_details").delete().eq("project_id", project_id).execute()
-                            
+                            # Ambil semua ID rab_items milik proyek ini
+                            existing_rab = supabase.table("rab_items") \
+                                .select("id") \
+                                .eq("project_id", project_id) \
+                                .execute().data
+                            rab_ids = [item['id'] for item in existing_rab]
+
+                            if rab_ids:
+                                # Hapus data terkait berdasarkan rab_item_id
+                                supabase.table("opname_details").delete().in_("rab_item_id", rab_ids).execute()
+                                supabase.table("opname_sub_details").delete().in_("rab_item_id", rab_ids).execute()
+                                supabase.table("rap_items").delete().in_("rab_item_id", rab_ids).execute()
+
                             # Baru hapus rab_items
                             supabase.table("rab_items").delete().eq("project_id", project_id).execute()
                             st.info("✅ Data RAB lama beserta RAP & Opname terkait berhasil dihapus.")
