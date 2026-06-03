@@ -723,8 +723,18 @@ if uploaded_file:
             if st.button("🚀 Mulai Import", type="primary", use_container_width=True):
                 try:
                     if replace_all:
-                        supabase.table("rab_items").delete().eq("project_id", project_id).execute()
-                        st.info("Data RAB lama telah dihapus.")
+                        try:
+                            # Hapus data terkait terlebih dahulu untuk menghindari foreign key error
+                            supabase.table("rap_items").delete().eq("project_id", project_id).execute()
+                            supabase.table("opname_details").delete().eq("project_id", project_id).execute()
+                            supabase.table("opname_sub_details").delete().eq("project_id", project_id).execute()
+                            
+                            # Baru hapus rab_items
+                            supabase.table("rab_items").delete().eq("project_id", project_id).execute()
+                            st.info("✅ Data RAB lama beserta RAP & Opname terkait berhasil dihapus.")
+                        except Exception as delete_error:
+                            st.error(f"Gagal menghapus data lama: {str(delete_error)}")
+                            st.stop()
                     
                     # Proses import dengan hierarchy berdasarkan Level
                     inserted = 0
