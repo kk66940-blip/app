@@ -1,400 +1,797 @@
 import streamlit as st
-import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from utils.supabase_client import get_supabase
 from utils.helpers import format_rupiah
 from datetime import datetime
-from io import BytesIO
 from collections import defaultdict
+from io import BytesIO
+
+# ==================== IMPORT BARU ====================
+from utils.ahsp_helper import get_ahsp_for_selection
+
+# Library untuk Export
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.units import cm
 
 supabase = get_supabase()
-
-
-def build_rap_tree(items):
-    """Membangun struktur tree berdasarkan parent_id"""
-    children_map = defaultdict(list)
-    for item in items:
-        children_map[item.get('parent_id')].append(item)
-    for pid in children_map:
-        children_map[pid] = sorted(children_map[pid], key=lambda x: (x.get('sort_order', 0), x.get('id', 0)))
-    return children_map
-
-
-def get_root_items(items):
-    all_ids = {item['id'] for item in items if item.get('id')}
-    root_items = [item for item in items if item.get('parent_id') is None or item.get('parent_id') not in all_ids]
-    return sorted(root_items, key=lambda x: (x.get('sort_order', 0), x.get('id', 0)))
 project_id = st.session_state.get("current_project_id")
-project_name = st.session_state.get("selected_project_name", "Proyek")
 
-st.header("📋 RAP - Rencana Anggaran Pelaksanaan")
-st.subheader(f"Proyek: {project_name}")
+st.header("📋 RAB - Rencana Anggaran Biaya")
 
 if not project_id:
-    st.warning("Pilih proyek di sidebar")
+    st.warning("Pilih proyek terlebih dahulu di sidebar")
     st.stop()
 
-st.divider()
-
-# ==================== CREATE RAP FROM RAB ====================
-st.subheader("🔄 Buat RAP dari RAB")
-
-col1, col2 = st.columns([1, 2])
-with col1:
-    percentage = st.number_input(
-        "Persentase Harga dari RAB (%)",
-        min_value=50,
-        max_value=150,
-        value=85,
-        step=1
-    )
-
-with col2:
-    st.write("")
-    st.write("")
-    if st.button("🔄 Buat/Update RAP", type="primary", use_container_width=True):
-        try:
-            supabase.table("rap_items").delete().eq("project_id", project_id).execute()
-            
-            rab_items = supabase.table("rab_items")\
-                .select("*")\
-                .eq("project_id", project_id)\
-                .execute().data
-            
-            for item in rab_items:
-                rap_data = {
-                    "project_id": project_id,
-                    "rab_item_id": item['id'],
-                    "code": item.get('code', ''),
-                    "description": item.get('description', ''),
-                    "unit": item.get('unit', ''),
-                    "volume": item.get('volume', 0),
-                    "planned_price": item.get('unit_price', 0),
-                    "execution_price": (item.get('unit_price', 0) * percentage / 100),
-                    "upah": 0,
-                    "level": item.get('level', 0),
-                    "parent_id": item.get('parent_id')
-                }
-                supabase.table("rap_items").insert(rap_data).execute()
-            
-            st.success("✅ RAP berhasil dibuat!")
-            st.rerun()
-        except Exception as e:
-            st.error(f"❌ Error: {str(e)}")
-
-st.divider()
-
-# ==================== EXPORT BUTTONS (VERSI FINAL - SMART GROUPING) ====================
-st.subheader("📤 Export RAP")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    if st.button("📊 Export ke Excel (Format Profesional)", type="primary", use_container_width=True):
-        try:
-            rap_items = supabase.table("rap_items")\
-                .select("*")\
-                .eq("project_id", project_id)\
-                .execute().data
-
-            if not rap_items:
-                st.warning("Tidak ada data RAP untuk diekspor.")
-                st.stop()
-
-            wb = openpyxl.Workbook()
-            ws = wb.active
-            ws.title = "RAP"
-
-            # ==================== STYLING ====================
-            header_fill = PatternFill(start_color="007bff", end_color="007bff", fill_type="solid")
-            header_font = Font(bold=True, color="FFFFFF", size=11)
-            
-            main_fill = PatternFill(start_color="28a745", end_color="28a745", fill_type="solid")
-            main_font = Font(bold=True, color="FFFFFF", size=11)
-            
-            subtotal_fill = PatternFill(start_color="fff3cd", end_color="fff3cd", fill_type="solid")
-            subtotal_font = Font(bold=True, size=10)
-            
-            grand_fill = PatternFill(start_color="28a745", end_color="28a745", fill_type="solid")
-            grand_font = Font(bold=True, color="FFFFFF", size=12)
-            
-            thin_border = Border(left=Side(style='thin'), right=Side(style='thin'),
-                                 top=Side(style='thin'), bottom=Side(style='thin'))
-
-            # ==================== JUDUL ====================
-            ws.merge_cells('A1:G1')
-            ws['A1'] = "RENCANA ANGGARAN PELAKSANAAN (RAP)"
-            ws['A1'].font = Font(bold=True, size=16)
-            ws['A1'].alignment = Alignment(horizontal='center')
-
-            ws.merge_cells('A2:G2')
-            ws['A2'] = f"Proyek: {project_name}   |   Tanggal: {datetime.now().strftime('%d/%m/%Y')}"
-            ws['A2'].font = Font(size=11, italic=True)
-            ws['A2'].alignment = Alignment(horizontal='center')
-
-            # ==================== HEADER ====================
-            headers = ["No", "Uraian Pekerjaan", "Sat", "Vol", "Harga Rencana (Rp)", "Harga Pelaksanaan (Rp)", "Upah (Rp)", "Total Biaya (Rp)"]
-            for col, header in enumerate(headers, 1):
-                cell = ws.cell(row=4, column=col, value=header)
-                cell.font = header_font
-                cell.fill = header_fill
-                cell.alignment = Alignment(horizontal='center')
-                cell.border = thin_border
-
-            # ==================== SMART GROUPING (BERDASARKAN DESKRIPSI) ====================
-            current_row = 5
-            main_counter = 0
-            sub_counter = 0
-            current_main_total = 0
-            grand_total = 0
-
-            # Urutkan berdasarkan id (asumsi urutan sudah benar)
-            sorted_items = sorted(rap_items, key=lambda x: x.get('id', 0))
-
-            i = 0
-            while i < len(sorted_items):
-                item = sorted_items[i]
-                desc = item.get('description', '').strip().lower()
-                volume = item.get('volume') or 0
-
-                # Deteksi main item: volume = 0 DAN deskripsi mengandung "pekerjaan"
-                is_main = (volume == 0) and ("pekerjaan" in desc)
-
-                if is_main:
-                    # ==================== MAIN ITEM (HIJAU) ====================
-                    main_counter += 1
-                    sub_counter = 0
-                    
-                    ws.cell(row=current_row, column=1, value=main_counter).border = thin_border
-                    ws.cell(row=current_row, column=2, value=item.get('description', '')).border = thin_border
-                    ws.cell(row=current_row, column=3, value=item.get('unit', '')).border = thin_border
-                    ws.cell(row=current_row, column=4, value=item.get('volume', 0)).border = thin_border
-                    ws.cell(row=current_row, column=5, value=item.get('planned_price', 0)).border = thin_border
-                    ws.cell(row=current_row, column=6, value=item.get('execution_price', 0)).border = thin_border
-                    ws.cell(row=current_row, column=7, value=item.get('upah', 0)).border = thin_border
-                    
-                    total = (item.get('volume') or 0) * (item.get('execution_price') or 0)
-                    ws.cell(row=current_row, column=8, value=total).border = thin_border
-                    
-                    for col in range(1, 8):
-                        ws.cell(row=current_row, column=col).fill = main_fill
-                        ws.cell(row=current_row, column=col).font = main_font
-                    
-                    for c in [4, 5, 6, 7]:
-                        ws.cell(row=current_row, column=c).number_format = '#,##0'
-                    
-                    current_row += 1
-                    current_main_total = total
-                    grand_total += total
-                    
-                    # Ambil item berikutnya sebagai child (sampai ketemu main item lagi)
-                    i += 1
-                    while i < len(sorted_items):
-                        next_item = sorted_items[i]
-                        next_desc = next_item.get('description', '').strip().lower()
-                        next_vol = next_item.get('volume') or 0
-                        next_is_main = (next_vol == 0) and ("pekerjaan" in next_desc)
-                        
-                        if next_is_main:
-                            break  # ketemu main item baru, stop
-                        
-                        # Ini child
-                        sub_counter += 1
-                        
-                        ws.cell(row=current_row, column=1, value=f"{main_counter}.{sub_counter}").border = thin_border
-                        ws.cell(row=current_row, column=2, value="    " + next_item.get('description', '')).border = thin_border
-                        ws.cell(row=current_row, column=3, value=next_item.get('unit', '')).border = thin_border
-                        ws.cell(row=current_row, column=4, value=next_item.get('volume', 0)).border = thin_border
-                        ws.cell(row=current_row, column=5, value=next_item.get('planned_price', 0)).border = thin_border
-                        ws.cell(row=current_row, column=6, value=next_item.get('execution_price', 0)).border = thin_border
-                        ws.cell(row=current_row, column=7, value=next_item.get('upah', 0)).border = thin_border
-                        
-                        child_total = (next_item.get('volume') or 0) * (next_item.get('execution_price') or 0)
-                        ws.cell(row=current_row, column=8, value=child_total).border = thin_border
-                        
-                        for c in [4, 5, 6, 7]:
-                            ws.cell(row=current_row, column=c).number_format = '#,##0'
-                        
-                        current_main_total += child_total
-                        grand_total += child_total
-                        current_row += 1
-                        i += 1
-                    
-                    # SUBTOTAL
-                    ws.cell(row=current_row, column=2, value="SUBTOTAL").font = subtotal_font
-                    ws.cell(row=current_row, column=8, value=current_main_total).font = subtotal_font
-                    ws.cell(row=current_row, column=8).number_format = '#,##0'
-                    
-                    for col in range(2, 8):
-                        ws.cell(row=current_row, column=col).fill = subtotal_fill
-                        ws.cell(row=current_row, column=col).border = thin_border
-                    current_row += 1
-                    
-                else:
-                    i += 1
-
-            # ==================== GRAND TOTAL ====================
-            current_row += 1
-            ws.merge_cells(start_row=current_row, start_column=2, end_row=current_row, end_column=7)
-            ws.cell(row=current_row, column=2, value="GRAND TOTAL").font = grand_font
-            ws.cell(row=current_row, column=2).fill = grand_fill
-            ws.cell(row=current_row, column=2).alignment = Alignment(horizontal='right')
-            
-            ws.cell(row=current_row, column=8, value=grand_total).font = grand_font
-            ws.cell(row=current_row, column=8).fill = grand_fill
-            ws.cell(row=current_row, column=8).number_format = '#,##0'
-            
-            for col in range(2, 8):
-                ws.cell(row=current_row, column=col).fill = grand_fill
-                ws.cell(row=current_row, column=col).border = thin_border
-
-            # Lebar kolom
-            ws.column_dimensions['A'].width = 8
-            ws.column_dimensions['B'].width = 55
-            ws.column_dimensions['C'].width = 10
-            ws.column_dimensions['D'].width = 12
-            ws.column_dimensions['E'].width = 20
-            ws.column_dimensions['F'].width = 22
-            ws.column_dimensions['G'].width = 15
-            ws.column_dimensions['H'].width = 20
-
-            ws.row_dimensions[1].height = 28
-            ws.row_dimensions[4].height = 22
-
-            output = BytesIO()
-            wb.save(output)
-            output.seek(0)
-
-            filename = f"RAP_{project_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.xlsx"
-            st.download_button(
-                label="⬇️ Download File Excel (Format Profesional)",
-                data=output,
-                file_name=filename,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
-            st.success("✅ Export berhasil! Sekarang sub-item sudah masuk ke bawah main item dengan benar.")
-
-        except Exception as e:
-            st.error(f"❌ Error: {str(e)}")
-
-with col2:
-    if st.button("📄 Export ke PDF", type="primary", use_container_width=True):
-        st.info("Fitur PDF akan ditambahkan nanti.")
-
-st.divider()
-
-# ==================== TABEL DI HALAMAN ====================
-st.subheader("📊 Daftar RAP (Hirarkis)")
-
-rap_items = supabase.table("rap_items")\
+# ==================== AMBIL DATA ====================
+all_rab_items = supabase.table("rab_items")\
     .select("*")\
     .eq("project_id", project_id)\
-    .execute().data
+    .order("level").order("sort_order").execute().data
 
-if not rap_items:
-    st.info("Belum ada data RAP. Buat RAP dari RAB di atas.")
-    st.stop()
+# ==================== TRUE LIVE SEARCH ====================
+st.markdown("### 🔍 Live Search (Update Langsung Saat Mengetik)")
 
-def display_rap_like_rab(items):
-    """Tampilan RAP yang lebih rapi menggunakan parent_id (mirip RAB)"""
-    if not items:
-        return
+search_term = st.text_input(
+    "Ketik untuk mencari...",
+    placeholder="Contoh: hebel, rangka, pasangan, A.1...",
+    key="rab_live_search"
+)
 
-    children_map = build_rap_tree(items)
-    root_items = get_root_items(items)
+if search_term and search_term.strip() != "":
+    search_lower = search_term.lower().strip()
+    
+    matched_ids = set()
+    for item in all_rab_items:
+        if search_lower in item.get('code', '').lower() or search_lower in item.get('description', '').lower():
+            matched_ids.add(item['id'])
+            current = item
+            while current.get('parent_id'):
+                matched_ids.add(current['parent_id'])
+                current = next((x for x in all_rab_items if x['id'] == current['parent_id']), None)
+                if current is None:
+                    break
 
-    st.subheader("📊 Struktur RAP (Hierarkis)")
+    filtered_items = [item for item in all_rab_items if item['id'] in matched_ids]
+    match_count = len([i for i in filtered_items if search_lower in i.get('code','').lower() or search_lower in i.get('description','').lower()])
+    st.success(f"✅ Ditemukan **{match_count} item** yang cocok dengan **'{search_term}'**")
+else:
+    filtered_items = all_rab_items
 
-    def render_item(item, level=0):
-        indent = "　" * (level * 2)
-        code = item.get('code', '')
-        title = f"{indent}{code} - {item.get('description','')}" if code else f"{indent}{item.get('description','')}"
+st.divider()
 
-        total_rencana = (item.get("volume") or 0) * (item.get("planned_price") or 0)
-        total_pelaksanaan = (item.get("volume") or 0) * (item.get("execution_price") or 0)
-        total_upah = (item.get("upah") or 0) * (item.get("volume") or 0)
-        total_biaya = total_pelaksanaan + total_upah
+# ==================== TAMBAH ITEM BARU (LAMA) ====================
+with st.expander("➕ Tambah Item BARU", expanded=False):
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        level = st.selectbox("Level", [0, 1, 2, 3], index=0)
+        parent_options = ["Tidak ada (Main Item)"] + [f"{item['code']} - {item['description'][:40]}" for item in all_rab_items if item.get('level') == level-1]
+        parent_choice = st.selectbox("Parent Item", parent_options)
+    with col2:
+        code = st.text_input("Kode Item", value="A.1")
+        description = st.text_input("Uraian Pekerjaan", value="Pekerjaan ...")
+    
+    col_a, col_b, col_c = st.columns(3)
+    with col_a:
+        volume = st.number_input("Volume", value=1.0, step=0.01)
+        unit = st.text_input("Satuan", value="m³")
+    with col_b:
+        unit_price = st.number_input("Harga Satuan (Rp)", value=100000, step=1000)
+    with col_c:
+        sort_order = st.number_input("Urutan", value=1, step=1)
+    
+    if st.button("💾 Simpan Item BARU", type="primary"):
+        parent_id = None
+        if parent_choice != "Tidak ada (Main Item)":
+            parent_code = parent_choice.split(" - ")[0]
+            parent = next((item for item in all_rab_items if item['code'] == parent_code), None)
+            if parent:
+                parent_id = parent['id']
+        
+        new_item = {
+            "project_id": project_id, "code": code, "description": description,
+            "volume": volume, "unit": unit, "unit_price": unit_price,
+            "level": level, "parent_id": parent_id, "sort_order": sort_order
+        }
+        supabase.table("rab_items").insert(new_item).execute()
+        st.success("✅ Item berhasil ditambahkan!")
+        st.rerun()
 
-        # Main item (level 0) pakai emoji ▶
-        prefix = "▶ " if level == 0 else "• "
+st.divider()
 
-        with st.expander(f"**{prefix}{title}**", expanded=False):
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Volume", f"{item.get('volume','0')} {item.get('unit','')}")
-            col2.metric("Harga Rencana", format_rupiah(item.get('planned_price',0)))
-            col3.metric("Harga Pelaksanaan", format_rupiah(item.get('execution_price',0)))
+# ==================== TAMBAH ITEM DARI AHSP (FITUR BARU) ====================
+with st.expander("➕ Tambah Item dari Database AHSP", expanded=False):
+    st.caption("Pilih item dari database AHSP. Harga akan otomatis terisi dari perhitungan terbaru.")
 
-            st.caption(f"**Total Rencana:** {format_rupiah(total_rencana)}   |   **Total Pelaksanaan:** {format_rupiah(total_pelaksanaan)}   |   **Total + Upah:** {format_rupiah(total_biaya)}")
+    ahsp_items = get_ahsp_for_selection()
+
+    if not ahsp_items:
+        st.warning("Belum ada data di Database AHSP. Silakan isi dulu di halaman Database AHSP.")
+    else:
+        # Format pilihan
+        ahsp_options = {
+            f"{item['code']} - {item['description'][:65]} ({item.get('unit', '-')})": item 
+            for item in ahsp_items
+        }
+
+        selected_label = st.selectbox(
+            "Pilih Item AHSP",
+            options=list(ahsp_options.keys()),
+            key="ahsp_select_rab"
+        )
+
+        selected_ahsp = ahsp_options[selected_label]
+
+        # Preview
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Kode", selected_ahsp['code'])
+        col2.metric("Satuan", selected_ahsp.get('unit', '-'))
+        col3.metric("Harga dari AHSP", f"Rp {selected_ahsp.get('calculated_unit_price', 0):,.0f}")
+
+        st.divider()
+
+        # Form input
+        with st.form("form_add_from_ahsp"):
+            col_a, col_b = st.columns(2)
+            with col_a:
+                level = st.selectbox("Level", [0, 1, 2, 3], index=0, key="ahsp_level")
+                volume = st.number_input("Volume", value=1.0, step=0.01, key="ahsp_volume")
+            with col_b:
+                sort_order = st.number_input("Urutan", value=1, step=1, key="ahsp_sort")
+                parent_options = ["Tidak ada (Main Item)"] + [
+                    f"{item['code']} - {item['description'][:40]}" 
+                    for item in all_rab_items if item.get('level') == level - 1
+                ]
+                parent_choice = st.selectbox("Parent Item", parent_options, key="ahsp_parent")
+
+            if st.form_submit_button("💾 Simpan ke RAB dari AHSP", type="primary", use_container_width=True):
+                try:
+                    parent_id = None
+                    if parent_choice != "Tidak ada (Main Item)":
+                        parent_code = parent_choice.split(" - ")[0]
+                        parent = next((item for item in all_rab_items if item['code'] == parent_code), None)
+                        if parent:
+                            parent_id = parent['id']
+
+                    new_item = {
+                        "project_id": project_id,
+                        "code": selected_ahsp['code'],
+                        "description": selected_ahsp['description'],
+                        "volume": volume,
+                        "unit": selected_ahsp.get('unit', ''),
+                        "unit_price": selected_ahsp.get('calculated_unit_price', 0) or selected_ahsp.get('stored_unit_price', 0),
+                        "level": level,
+                        "parent_id": parent_id,
+                        "sort_order": sort_order
+                    }
+
+                    supabase.table("rab_items").insert(new_item).execute()
+                    st.success(f"✅ Item dari AHSP berhasil ditambahkan: {selected_ahsp['code']}")
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"Gagal menyimpan: {str(e)}")
+
+st.divider()
+
+# ==================== STRUKTUR RAB ====================
+st.subheader("Struktur RAB")
+
+def display_rab_tree(items, parent_id=None, level=0):
+    children = [item for item in items if item.get("parent_id") == parent_id]
+    for item in sorted(children, key=lambda x: x.get('sort_order', 0)):
+        indent = "　" * level * 3
+        total = (item.get("volume") or 0) * (item.get("unit_price") or 0)
+        
+        is_match = False
+        if search_term:
+            search_lower = search_term.lower().strip()
+            if search_lower in item.get('code', '').lower() or search_lower in item.get('description', '').lower():
+                is_match = True
+        
+        label = f"{indent}{item.get('code','')} - {item.get('description','')[:65]}"
+        if is_match:
+            label = f"✅ {label}"
+
+        with st.expander(label, expanded=bool(search_term)):
+            col1, col2, col3 = st.columns([3,2,2])
+            col1.write(f"**Volume:** {item.get('volume','0')} {item.get('unit','')}")
+            col2.write(f"**Harga Satuan:** {format_rupiah(item.get('unit_price',0))}")
+            col3.write(f"**Total:** {format_rupiah(total)}")
 
             col_edit, col_delete = st.columns(2)
             with col_edit:
-                if st.button("✏️ Edit Harga", key=f"edit_{item['id']}", use_container_width=True):
-                    st.session_state.edit_rap_item = item
+                if st.button("✏️ Edit", key=f"edit_{item['id']}"):
+                    st.session_state.edit_item = item
                     st.rerun()
             with col_delete:
-                if st.button("🗑️ Hapus", key=f"del_{item['id']}", use_container_width=True):
-                    st.warning("Fitur hapus akan ditambahkan nanti")
+                if st.button("🗑️ Hapus", key=f"del_{item['id']}"):
+                    st.session_state.delete_item = item
+                    st.rerun()
 
-            # Render children
-            for child in children_map.get(item.get('id'), []):
-                render_item(child, level + 1)
+            display_rab_tree(items, item["id"], level + 1)
 
-    for root in root_items:
-        render_item(root)
+if filtered_items:
+    display_rab_tree(filtered_items)
+else:
+    if search_term:
+        st.warning(f"Tidak ada item yang cocok dengan **'{search_term}'**")
+    else:
+        st.info("Belum ada data RAB.")
 
-    # Form Edit
-    if "edit_rap_item" in st.session_state:
-        item = st.session_state.edit_rap_item
-        st.subheader(f"✏️ Edit Item: {item.get('code','')} - {item.get('description','')}")
-
+# ==================== EDIT FORM ====================
+if "edit_item" in st.session_state:
+    item = st.session_state.edit_item
+    st.subheader(f"✏️ Edit Item: {item['code']}")
+    
+    with st.form("edit_rab_form"):
         col1, col2 = st.columns(2)
         with col1:
-            new_exec = st.number_input("Harga Pelaksanaan Baru (Rp)", value=float(item.get('execution_price', 0)), step=1000.0)
+            new_code = st.text_input("Kode", value=item.get('code', ''))
+            new_desc = st.text_input("Uraian Pekerjaan", value=item.get('description', ''))
+            new_level = st.selectbox("Level", [0,1,2,3], index=item.get('level', 0))
         with col2:
-            new_upah = st.number_input("Upah Baru (Rp)", value=float(item.get('upah', 0)), step=1000.0)
+            new_volume = st.number_input("Volume", value=float(item.get('volume', 0)), step=0.01)
+            new_unit = st.text_input("Satuan", value=item.get('unit', ''))
+            new_price = st.number_input("Harga Satuan (Rp)", value=float(item.get('unit_price', 0)), step=1000)
 
-        col_save, col_cancel = st.columns(2)
-        with col_save:
-            if st.button("💾 Simpan Perubahan", type="primary"):
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.form_submit_button("💾 Simpan Perubahan", type="primary", use_container_width=True):
                 try:
-                    supabase.table("rap_items").update({
-                        "execution_price": new_exec,
-                        "upah": new_upah
+                    supabase.table("rab_items").update({
+                        "code": new_code,
+                        "description": new_desc,
+                        "level": new_level,
+                        "volume": new_volume,
+                        "unit": new_unit,
+                        "unit_price": new_price,
+                        "updated_at": datetime.now().isoformat()
                     }).eq("id", item['id']).execute()
-                    st.success("✅ Berhasil disimpan!")
-                    del st.session_state.edit_rap_item
+                    
+                    st.success("✅ Item berhasil diperbarui!")
+                    del st.session_state.edit_item
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Error: {str(e)}")
-        with col_cancel:
-            if st.button("Batal"):
-                del st.session_state.edit_rap_item
+                    st.error(f"Error: {e}")
+        
+        with col_btn2:
+            if st.form_submit_button("Batal", use_container_width=True):
+                del st.session_state.edit_item
                 st.rerun()
-
-display_rap_like_rab(rap_items)
 
 st.divider()
 
-# ==================== SUMMARY ====================
-st.subheader("📈 Ringkasan RAP")
+# ==================== EXPORT FUNCTIONS - MULTI LEVEL TREE (FIXED) ====================
 
-total_rencana = sum(item.get('volume', 0) * item.get('planned_price', 0) for item in rap_items)
-total_pelaksanaan = sum(item.get('volume', 0) * item.get('execution_price', 0) for item in rap_items)
-total_upah = sum(item.get('volume', 0) * item.get('upah', 0) for item in rap_items)
-total_biaya = total_pelaksanaan
-total_variance = total_rencana - total_biaya
+def build_tree(items):
+    """Membangun struktur tree dari flat list berdasarkan parent_id"""
+    children_map = defaultdict(list)
+    for item in items:
+        children_map[item.get('parent_id')].append(item)
+    
+    # Sort setiap level berdasarkan sort_order
+    for pid in children_map:
+        children_map[pid] = sorted(children_map[pid], key=lambda x: (x.get('sort_order', 0), x.get('id', 0)))
+    
+    return children_map
 
-col1, col2, col3, col4 = st.columns(4)
+
+def process_tree_for_export(node, children_map, current_path, row_data, grand_total):
+    """
+    Rekursif memproses tree untuk export.
+    - Jika node punya anak → dijadikan HEADER (hijau)
+    - Jika node tidak punya anak → dijadikan baris data biasa
+    """
+    node_id = node['id']
+    children = children_map.get(node_id, [])
+    has_children = len(children) > 0
+
+    # Buat nomor hierarkis saat ini
+    current_number = ".".join(map(str, current_path))
+
+    if has_children:
+        # === HEADER / MAIN ITEM (punya sub) ===
+        row_data.append({
+            'type': 'header',
+            'number': current_number,
+            'description': node.get('description', ''),
+            'unit': '',
+            'volume': 0,
+            'price': 0,
+            'total': 0
+        })
+        
+        # Proses anak-anaknya
+        sub_total = 0
+        for idx, child in enumerate(children, 1):
+            new_path = current_path + [idx]
+            child_result = process_tree_for_export(child, children_map, new_path, [], 0)
+            
+            # Tambahkan baris anak
+            for r in child_result['rows']:
+                row_data.append(r)
+            
+            sub_total += child_result['subtotal']
+        
+        # Tambahkan subtotal setelah semua anak
+        row_data.append({
+            'type': 'subtotal',
+            'number': '',
+            'description': 'SUBTOTAL',
+            'unit': '',
+            'volume': 0,
+            'price': 0,
+            'total': sub_total
+        })
+        
+        return {'rows': row_data, 'subtotal': sub_total}
+    
+    else:
+        # === LEAF ITEM (tidak punya anak) ===
+        vol = node.get('volume', 0) or 0
+        price = node.get('unit_price', 0) or 0
+        total = vol * price
+        
+        row_data.append({
+            'type': 'item',
+            'number': current_number,
+            'description': node.get('description', ''),
+            'unit': node.get('unit', ''),
+            'volume': vol,
+            'price': price,
+            'total': total
+        })
+        
+        return {'rows': row_data, 'subtotal': total}
+
+
+def export_rab_excel_hierarchical(rab_items, project_name):
+    """Export RAB dengan dukungan multi-level hierarchy (Main → Sub → Sub-Sub)"""
+    if not rab_items:
+        st.warning("Tidak ada data RAB untuk diekspor.")
+        return
+
+    children_map = build_tree(rab_items)
+
+    # Ambil root items (yang tidak punya parent atau parent-nya tidak ada di data)
+    all_ids = {item['id'] for item in rab_items}
+    root_items = [item for item in rab_items if item.get('parent_id') is None or item.get('parent_id') not in all_ids]
+    root_items = sorted(root_items, key=lambda x: (x.get('sort_order', 0), x.get('id', 0)))
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "RAB"
+
+    # Styling
+    header_fill = PatternFill(start_color="0d6efd", end_color="0d6efd", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    section_fill = PatternFill(start_color="28a745", end_color="28a745", fill_type="solid")
+    section_font = Font(bold=True, color="FFFFFF", size=11)
+    subtotal_fill = PatternFill(start_color="fff3cd", end_color="fff3cd", fill_type="solid")
+    grand_fill = PatternFill(start_color="d4edda", end_color="d4edda", fill_type="solid")
+    thin_border = Border(left=Side(style='thin'), right=Side(style='thin'),
+                         top=Side(style='thin'), bottom=Side(style='thin'))
+
+    # Header
+    ws.merge_cells('A1:F1')
+    ws['A1'] = f"RENCANA ANGGARAN BIAYA (RAB) - {project_name}"
+    ws['A1'].font = Font(bold=True, size=14, color="0d6efd")
+    ws['A1'].alignment = Alignment(horizontal='center')
+
+    ws.merge_cells('A2:F2')
+    ws['A2'] = f"Tanggal Export: {datetime.now().strftime('%d %B %Y')}"
+    ws['A2'].font = Font(italic=True, size=10)
+
+    headers = ["No", "Uraian Pekerjaan", "Satuan", "Volume", "Harga Satuan (Rp)", "Jumlah (Rp)"]
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=4, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='center')
+        cell.border = thin_border
+
+    row_num = 5
+    grand_total = 0
+    all_rows = []
+
+    # Proses setiap root item secara rekursif
+    for idx, root in enumerate(root_items, 1):
+        result = process_tree_for_export(root, children_map, [idx], [], 0)
+        all_rows.extend(result['rows'])
+        grand_total += result['subtotal']
+
+    # Tulis ke Excel
+    for row in all_rows:
+        if row['type'] == 'header':
+            # Section Header (Hijau)
+            ws.merge_cells(start_row=row_num, start_column=1, end_row=row_num, end_column=6)
+            cell = ws.cell(row=row_num, column=1, value=f"▶ {row['description']}")
+            cell.font = section_font
+            cell.fill = section_fill
+            for c in range(1, 7):
+                ws.cell(row=row_num, column=c).border = thin_border
+                ws.cell(row=row_num, column=c).fill = section_fill
+
+        elif row['type'] == 'subtotal':
+            ws.cell(row=row_num, column=2, value="SUBTOTAL").font = Font(bold=True)
+            ws.cell(row=row_num, column=6, value=row['total']).font = Font(bold=True)
+            ws.cell(row=row_num, column=6).number_format = '#,##0'
+            for c in range(1, 7):
+                ws.cell(row=row_num, column=c).border = thin_border
+                ws.cell(row=row_num, column=c).fill = subtotal_fill
+
+        else:  # type == 'item'
+            ws.cell(row=row_num, column=1, value=row['number']).border = thin_border
+            ws.cell(row=row_num, column=2, value=f"    {row['description']}").border = thin_border
+            ws.cell(row=row_num, column=3, value=row['unit']).border = thin_border
+            ws.cell(row=row_num, column=4, value=row['volume']).border = thin_border
+            ws.cell(row=row_num, column=5, value=row['price']).border = thin_border
+            ws.cell(row=row_num, column=6, value=row['total']).border = thin_border
+
+            ws.cell(row=row_num, column=4).number_format = '#,##0.00'
+            ws.cell(row=row_num, column=5).number_format = '#,##0'
+            ws.cell(row=row_num, column=6).number_format = '#,##0'
+
+        row_num += 1
+
+    # Grand Total
+    row_num += 1
+    ws.merge_cells(start_row=row_num, start_column=2, end_row=row_num, end_column=5)
+    ws.cell(row=row_num, column=2, value="GRAND TOTAL").font = Font(bold=True, size=11)
+    ws.cell(row=row_num, column=2).fill = grand_fill
+    ws.cell(row=row_num, column=2).alignment = Alignment(horizontal='right')
+    ws.cell(row=row_num, column=6, value=grand_total).font = Font(bold=True, size=11)
+    ws.cell(row=row_num, column=6).fill = grand_fill
+    ws.cell(row=row_num, column=6).number_format = '#,##0'
+    for c in range(2, 7):
+        ws.cell(row=row_num, column=c).border = thin_border
+        ws.cell(row=row_num, column=c).fill = grand_fill
+
+    # Lebar kolom
+    ws.column_dimensions['A'].width = 8
+    ws.column_dimensions['B'].width = 55
+    ws.column_dimensions['C'].width = 10
+    ws.column_dimensions['D'].width = 12
+    ws.column_dimensions['E'].width = 18
+    ws.column_dimensions['F'].width = 18
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    filename = f"RAB_{project_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    st.download_button(
+        label="⬇️ Download Excel (Multi-Level Hierarchy)",
+        data=output,
+        file_name=filename,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True
+    )
+    st.success("✅ Export berhasil dengan struktur multi-level (Main → Sub → Detail)!")
+
+
+def export_rab_pdf_hierarchical(rab_items, project_name):
+    """Export RAB ke PDF dengan tampilan rapih multi-level hierarchy (matching Excel quality)"""
+    if not rab_items:
+        st.warning("Tidak ada data RAB untuk diekspor.")
+        return
+
+    children_map = build_tree(rab_items)
+
+    all_ids = {item['id'] for item in rab_items}
+    root_items = [item for item in rab_items if item.get('parent_id') is None or item.get('parent_id') not in all_ids]
+    root_items = sorted(root_items, key=lambda x: (x.get('sort_order', 0), x.get('id', 0)))
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4,
+                            rightMargin=1.2*cm, leftMargin=1.2*cm,
+                            topMargin=1.2*cm, bottomMargin=1.2*cm)
+
+    styles = getSampleStyleSheet()
+    normal = ParagraphStyle('Normal', parent=styles['Normal'], fontSize=8, leading=10)
+    title_style = ParagraphStyle('Title', parent=styles['Normal'], fontSize=14, fontName='Helvetica-Bold', textColor=colors.HexColor('#0d6efd'))
+    header_style = ParagraphStyle('Header', parent=styles['Normal'], fontSize=9, fontName='Helvetica-Bold', textColor=colors.white, leading=11)
+    subtotal_style = ParagraphStyle('Subtotal', parent=styles['Normal'], fontSize=8, fontName='Helvetica-Bold', leading=10)
+    grand_style = ParagraphStyle('Grand', parent=styles['Normal'], fontSize=9, fontName='Helvetica-Bold', leading=11)
+
+    elements = []
+    elements.append(Paragraph("RENCANA ANGGARAN BIAYA (RAB)", title_style))
+    elements.append(Paragraph(f"<b>Proyek:</b> {project_name}", normal))
+    elements.append(Paragraph(f"<b>Tanggal:</b> {datetime.now().strftime('%d %B %Y')}", normal))
+    elements.append(Spacer(1, 0.25*cm))
+
+    table_data = [["No", "Uraian Pekerjaan", "Sat", "Vol", "Harga (Rp)", "Jumlah (Rp)"]]
+    
+    # Track row indices for styling
+    header_row_indices = []      # rows that are section headers (green)
+    subtotal_row_indices = []    # rows that are SUBTOTAL (yellow)
+    grand_total_row_index = None
+
+    grand_total = 0
+    current_row = 1  # start after header row (row 0)
+
+    def add_to_pdf(node, path, children_map):
+        nonlocal grand_total, current_row
+        node_id = node['id']
+        children = children_map.get(node_id, [])
+        has_children = len(children) > 0
+        current_no = ".".join(map(str, path))
+
+        if has_children:
+            # Header row (will be styled green)
+            header_row_indices.append(current_row)
+            table_data.append(["", Paragraph(f"▶ {node.get('description', '')}", header_style), "", "", "", ""])
+            current_row += 1
+            
+            sub_total = 0
+            for idx, child in enumerate(children, 1):
+                new_path = path + [idx]
+                child_total = add_to_pdf(child, new_path, children_map)
+                sub_total += child_total
+            
+            # Subtotal row
+            subtotal_row_indices.append(current_row)
+            table_data.append([
+                "", 
+                Paragraph("<b>SUBTOTAL</b>", subtotal_style), 
+                "", "", "", 
+                Paragraph(f"<b>{sub_total:,.0f}</b>", subtotal_style)
+            ])
+            current_row += 1
+            return sub_total
+        else:
+            vol = node.get('volume', 0) or 0
+            price = node.get('unit_price', 0) or 0
+            total = vol * price
+            grand_total += total
+
+            table_data.append([
+                current_no,
+                Paragraph(f"    {node.get('description', '')}", normal),
+                node.get('unit', ''),
+                f"{vol:,.2f}",
+                f"{price:,.0f}",
+                f"{total:,.0f}"
+            ])
+            current_row += 1
+            return total
+
+    for idx, root in enumerate(root_items, 1):
+        add_to_pdf(root, [idx], children_map)
+
+    # Grand Total
+    grand_total_row_index = current_row
+    table_data.append([
+        "", 
+        Paragraph("<b>GRAND TOTAL</b>", grand_style), 
+        "", "", "", 
+        Paragraph(f"<b>{grand_total:,.0f}</b>", grand_style)
+    ])
+
+    # Column widths (balanced for readability)
+    col_widths = [1.0*cm, 8.0*cm, 1.1*cm, 1.7*cm, 2.6*cm, 2.8*cm]
+    t = Table(table_data, colWidths=col_widths, repeatRows=1)
+
+    # Build dynamic style commands
+    style_commands = [
+        # Header row (blue)
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0d6efd')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 8),
+        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cccccc')),
+        ('FONTSIZE', (0, 1), (-1, -1), 7.5),
+        ('ALIGN', (3, 1), (3, -1), 'RIGHT'),  # Vol
+        ('ALIGN', (4, 1), (5, -1), 'RIGHT'),  # Harga & Jumlah
+        ('LEFTPADDING', (0, 0), (-1, -1), 3),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+    ]
+
+    # Green background for all header rows (▶ section headers)
+    for row_idx in header_row_indices:
+        style_commands.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor('#28a745')))
+        style_commands.append(('TEXTCOLOR', (0, row_idx), (-1, row_idx), colors.white))
+        style_commands.append(('FONTNAME', (0, row_idx), (-1, row_idx), 'Helvetica-Bold'))
+
+    # Yellow background + bold for SUBTOTAL rows
+    for row_idx in subtotal_row_indices:
+        style_commands.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor('#fff3cd')))
+        style_commands.append(('FONTNAME', (0, row_idx), (-1, row_idx), 'Helvetica-Bold'))
+
+    # Green background for GRAND TOTAL
+    if grand_total_row_index:
+        style_commands.append(('BACKGROUND', (0, grand_total_row_index), (-1, grand_total_row_index), colors.HexColor('#d4edda')))
+        style_commands.append(('FONTNAME', (0, grand_total_row_index), (-1, grand_total_row_index), 'Helvetica-Bold'))
+        style_commands.append(('FONTSIZE', (0, grand_total_row_index), (-1, grand_total_row_index), 9))
+
+    t.setStyle(TableStyle(style_commands))
+    elements.append(t)
+
+    doc.build(elements)
+    buffer.seek(0)
+
+    filename = f"RAB_{project_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf"
+    st.download_button(
+        label="⬇️ Download PDF (Rapih & Multi-Level)",
+        data=buffer,
+        file_name=filename,
+        mime="application/pdf",
+        use_container_width=True
+    )
+    st.success("✅ Export PDF sudah lebih rapih dengan warna header hijau, subtotal kuning, dan formatting profesional!")
+
+
+# ==================== TOMBOL EXPORT ====================
+project_name = st.session_state.get("selected_project_name", "Proyek")
+
+col1, col2 = st.columns(2)
 with col1:
-    st.metric("Total Rencana", format_rupiah(total_rencana))
-with col2:
-    st.metric("Total Pelaksanaan", format_rupiah(total_pelaksanaan))
-with col3:
-    st.metric("Total Upah (Info)", format_rupiah(total_upah))
-with col4:
-    st.metric("Total Biaya", format_rupiah(total_biaya), 
-              delta=format_rupiah(total_variance),
-              delta_color="inverse" if total_variance < 0 else "normal")
+    if st.button("📊 Export ke Excel (Format Profesional)", type="primary", use_container_width=True):
+        export_rab_excel_hierarchical(all_rab_items, project_name)
 
-st.caption(f"Update: {datetime.now().strftime('%d %B %Y %H:%M')}")
+with col2:
+    if st.button("🖨️ Export ke PDF", type="primary", use_container_width=True):
+        export_rab_pdf_hierarchical(all_rab_items, project_name)
+
+
+# ==================== IMPORT RAB DARI EXCEL ====================
+st.divider()
+st.subheader("📥 Import RAB dari Excel")
+
+with st.expander("📋 Petunjuk Format Excel yang Didukung", expanded=False):
+    st.markdown("""
+    **Kolom yang wajib ada:**
+    - `Level` → 0 = Main Item, 1 = Sub Item, 2 = Detail, dst.
+    - `Uraian Pekerjaan`
+    - `Satuan`
+    - `Volume`
+    - `Harga Satuan`
+
+    **Kolom opsional:**
+    - `Kode`
+
+    **Contoh:**
+    | Level | Kode   | Uraian Pekerjaan              | Satuan | Volume | Harga Satuan |
+    |-------|--------|-------------------------------|--------|--------|--------------|
+    | 0     | A.1    | Pekerjaan Struktur            | -      | 0      | 0            |
+    | 1     | A.1.1  | Beton Bertulang               | m³     | 120    | 1.250.000    |
+    | 2     | A.1.1.1| Beton K-300                   | m³     | 85     | 1.350.000    |
+    """)
+
+uploaded_file = st.file_uploader(
+    "Pilih file Excel (.xlsx)", 
+    type=["xlsx"], 
+    key="import_rab_excel"
+)
+
+if uploaded_file:
+    try:
+        import pandas as pd
+        
+        # Baca file Excel, gunakan baris ke-4 sebagai header (header=3 karena 0-indexed)
+        df = pd.read_excel(uploaded_file, header=3)
+        
+        # Normalisasi nama kolom (lebih fleksibel)
+        df.columns = [str(c).strip().lower().replace("(", "").replace(")", "").replace("rp", "").strip() for c in df.columns]
+        
+        # Mapping kolom yang fleksibel
+        column_mapping = {}
+        for col in df.columns:
+            if col in ['level', 'lvl']:
+                column_mapping[col] = 'level'
+            elif col in ['uraian pekerjaan', 'uraian', 'deskripsi', 'description', 'pekerjaan']:
+                column_mapping[col] = 'description'
+            elif col in ['satuan', 'unit', 'sat']:
+                column_mapping[col] = 'unit'
+            elif col in ['volume', 'vol']:
+                column_mapping[col] = 'volume'
+            elif col in ['harga satuan', 'harga', 'unit price', 'hargasatuan']:
+                column_mapping[col] = 'unit_price'
+            elif col in ['kode', 'code', 'kd']:
+                column_mapping[col] = 'code'
+        
+        df = df.rename(columns=column_mapping)
+        
+        required_cols = ['level', 'description', 'unit', 'volume', 'unit_price']
+        missing = [col for col in required_cols if col not in df.columns]
+        
+        if missing:
+            st.error(f"Kolom yang wajib tidak ditemukan: {missing}")
+            st.info(f"Kolom yang terbaca: {list(df.columns)}")
+            st.stop()
+        
+        st.success(f"✅ Berhasil membaca **{len(df)} baris** data dari Excel.")
+        
+        # Preview
+        with st.expander("Lihat Preview Data (10 baris pertama)", expanded=True):
+            st.dataframe(df.head(10), use_container_width=True)
+        
+        # Pilihan Mode Import
+        import_mode = st.radio(
+            "Pilih Mode Import:",
+            options=[
+                "➕ Tambah Data Baru (Append)",
+                "🔄 Ganti Semua Data (Replace All)"
+            ],
+            index=0,
+            horizontal=True
+        )
+
+        if st.button("🚀 Mulai Import", type="primary", use_container_width=True):
+            try:
+                # === MODE REPLACE ALL ===
+                if import_mode == "🔄 Ganti Semua Data (Replace All)":
+                    try:
+                        existing_rab = supabase.table("rab_items") \
+                            .select("id") \
+                            .eq("project_id", project_id) \
+                            .execute().data
+                        rab_ids = [item['id'] for item in existing_rab]
+
+                        if rab_ids:
+                            supabase.table("opname_details").delete().in_("rab_item_id", rab_ids).execute()
+                            supabase.table("opname_sub_details").delete().in_("rab_item_id", rab_ids).execute()
+                            supabase.table("rap_items").delete().in_("rab_item_id", rab_ids).execute()
+
+                        supabase.table("rab_items").delete().eq("project_id", project_id).execute()
+                        st.info("✅ Data RAB lama beserta RAP & Opname terkait berhasil dihapus.")
+                    except Exception as delete_error:
+                        st.error(f"Gagal menghapus data lama: {str(delete_error)}")
+                        st.stop()
+
+                # === PROSES IMPORT (berlaku untuk kedua mode) ===
+                inserted = 0
+                parent_stack = {}
+
+                for idx, row in df.iterrows():
+                    level = int(row.get('level', 0))
+                    code = str(row.get('code', '')).strip() if 'code' in row else ''
+                    description = str(row.get('description', '')).strip()
+                    unit = str(row.get('unit', '')).strip()
+                    volume = float(row.get('volume', 0) or 0)
+                    unit_price = float(row.get('unit_price', 0) or 0)
+
+                    if not description:
+                        continue
+
+                    parent_id = parent_stack.get(level - 1) if level > 0 else None
+
+                    new_item = {
+                        "project_id": project_id,
+                        "level": level,
+                        "code": code,
+                        "description": description,
+                        "unit": unit,
+                        "volume": volume,
+                        "unit_price": unit_price,
+                        "parent_id": parent_id,
+                        "sort_order": idx + 1
+                    }
+
+                    res = supabase.table("rab_items").insert(new_item).execute()
+                    new_id = res.data[0]['id']
+                    parent_stack[level] = new_id
+
+                    keys_to_remove = [k for k in parent_stack if k > level]
+                    for k in keys_to_remove:
+                        del parent_stack[k]
+
+                    inserted += 1
+
+                st.success(f"✅ Berhasil import **{inserted} item** RAB!")
+                st.balloons()
+                st.rerun()
+
+            except Exception as e:
+                st.error(f"Gagal melakukan import: {str(e)}")
+                    
+    except Exception as e:
+        st.error(f"Gagal membaca file Excel: {str(e)}")
