@@ -5,8 +5,25 @@ from utils.supabase_client import get_supabase
 from utils.helpers import format_rupiah
 from datetime import datetime
 from io import BytesIO
+from collections import defaultdict
 
 supabase = get_supabase()
+
+
+def build_rap_tree(items):
+    """Membangun struktur tree berdasarkan parent_id"""
+    children_map = defaultdict(list)
+    for item in items:
+        children_map[item.get('parent_id')].append(item)
+    for pid in children_map:
+        children_map[pid] = sorted(children_map[pid], key=lambda x: (x.get('sort_order', 0), x.get('id', 0)))
+    return children_map
+
+
+def get_root_items(items):
+    all_ids = {item['id'] for item in items if item.get('id')}
+    root_items = [item for item in items if item.get('parent_id') is None or item.get('parent_id') not in all_ids]
+    return sorted(root_items, key=lambda x: (x.get('sort_order', 0), x.get('id', 0)))
 project_id = st.session_state.get("current_project_id")
 project_name = st.session_state.get("selected_project_name", "Proyek")
 
@@ -321,7 +338,7 @@ def display_rap_like_rab(items):
                 if st.button("🗑️ Hapus", key=f"del_{item['id']}", use_container_width=True):
                     st.warning("Fitur hapus akan ditambahkan nanti")
 
-            # Render children (true parent-child nesting)
+            # Render children (true parent-child)
             for child in children_map.get(item.get('id'), []):
                 render_item(child, level + 1)
 
