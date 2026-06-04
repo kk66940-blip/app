@@ -280,21 +280,20 @@ if not rap_items:
     st.stop()
 
 def display_rap_like_rab(items):
-    """Tampilan RAP sederhana tapi rapi berdasarkan Level (paling stabil)"""
+    """Tampilan RAP yang bersih berdasarkan Level"""
     if not items:
         return
 
-    # Group by level
     from collections import defaultdict
     level_map = defaultdict(list)
     for item in items:
         lvl = item.get('level', 0)
         level_map[lvl].append(item)
     
-    for lvl in sorted(level_map.keys()):
+    for lvl in level_map:
         level_map[lvl] = sorted(level_map[lvl], key=lambda x: (x.get('sort_order', 0), x.get('id', 0)))
 
-    st.subheader("📊 Struktur RAP (Hierarkis berdasarkan Level)")
+    st.subheader("📊 Struktur RAP (Hierarkis)")
 
     for lvl in sorted(level_map.keys()):
         for item in level_map[lvl]:
@@ -302,7 +301,11 @@ def display_rap_like_rab(items):
             code = item.get('code', '')
             desc = item.get('description', '')
             
-            prefix = "▶ " if lvl == 0 else "└─ "
+            if lvl == 0:
+                prefix = "▶ "
+            else:
+                prefix = "└─ "
+            
             title = f"{indent}{prefix}{code} - {desc}" if code else f"{indent}{prefix}{desc}"
 
             total_rencana = (item.get("volume") or 0) * (item.get("planned_price") or 0)
