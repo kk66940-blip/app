@@ -37,68 +37,56 @@ with col2:
     st.write("")
     if st.button("🔄 Buat/Update RAP", type="primary", use_container_width=True):
         try:
-            # Hapus data RAP lama
+            # Ambil semua RAB items terlebih dahulu
+            rab_items = supabase.table("rab_items")\
+                .select("id")\
+                .eq("project_id", project_id)\
+                .execute().data
+            
+            valid_rab_ids = {item['id'] for item in rab_items}
+            
+            # Hapus RAP lama
             supabase.table("rap_items").delete().eq("project_id", project_id).execute()
             
-            # Ambil semua data RAB
-            rab_items = supabase.table("rab_items")\
+            # Ambil data RAB lengkap
+            rab_items_full = supabase.table("rab_items")\
                 .select("*")\
                 .eq("project_id", project_id)\
                 .order("level").order("sort_order")\
                 .execute().data
             
-            if not rab_items:
-                st.warning("Tidak ada data RAB untuk dibuat RAP.")
-                st.stop()
+            inserted_count = 0
+            skipped_invalid_parent = 0
             
-            # Mapping: RAB ID lama → RAP ID baru (untuk resolve parent_id)
-            id_mapping = {}
+            for item in rab_items_full:
+                parent_id = item.get('parent_id')
+                
+                # Validasi parent_id (harus ada di RAB atau None)
+                if parent_id is not None and parent_id not in valid_rab_ids:
+                    parent_id = None   # fallback ke None jika invalid
+                    skipped_invalid_parent += 1
+                
+                rap_data = {
+                    "project_id": project_id,
+                    "rab_item_id": item['id'],
+                    "code": item.get('code', ''),
+                    "description": item.get('description', ''),
+                    "unit": item.get('unit', ''),
+                    "volume": item.get('volume', 0),
+                    "planned_price": item.get('unit_price', 0),
+                    "execution_price": round(item.get('unit_price', 0) * percentage / 100),
+                    "upah": 0,
+                    "level": item.get('level', 0),
+                    "parent_id": parent_id
+                }
+                supabase.table("rap_items").insert(rap_data).execute()
+                inserted_count += 1
             
-            # Insert level 0 dulu (root items)
-            for item in rab_items:
-                if item.get('level', 0) == 0:
-                    rap_data = {
-                        "project_id": project_id,
-                        "rab_item_id": item['id'],
-                        "code": item.get('code', ''),
-                        "description": item.get('description', ''),
-                        "unit": item.get('unit', ''),
-                        "volume": item.get('volume', 0),
-                        "planned_price": item.get('unit_price', 0),
-                        "execution_price": round(item.get('unit_price', 0) * percentage / 100),
-                        "upah": 0,
-                        "level": item.get('level', 0),
-                        "parent_id": None
-                    }
-                    res = supabase.table("rap_items").insert(rap_data).execute()
-                    new_id = res.data[0]['id']
-                    id_mapping[item['id']] = new_id
+            msg = f"✅ RAP berhasil dibuat! ({inserted_count} item)"
+            if skipped_invalid_parent > 0:
+                msg += f" | {skipped_invalid_parent} item punya parent_id invalid (diset ke None)"
             
-            # Insert level > 0 dengan resolve parent_id
-            for item in rab_items:
-                if item.get('level', 0) > 0:
-                    old_parent_id = item.get('parent_id')
-                    new_parent_id = id_mapping.get(old_parent_id) if old_parent_id else None
-                    
-                    rap_data = {
-                        "project_id": project_id,
-                        "rab_item_id": item['id'],
-                        "code": item.get('code', ''),
-                        "description": item.get('description', ''),
-                        "unit": item.get('unit', ''),
-                        "volume": item.get('volume', 0),
-                        "planned_price": item.get('unit_price', 0),
-                        "execution_price": round(item.get('unit_price', 0) * percentage / 100),
-                        "upah": 0,
-                        "level": item.get('level', 0),
-                        "parent_id": new_parent_id
-                    }
-                    res = supabase.table("rap_items").insert(rap_data).execute()
-                    new_id = res.data[0]['id']
-                    id_mapping[item['id']] = new_id
-            
-            st.success("✅ RAP berhasil dibuat dengan hierarki yang benar!")
-            st.balloons()
+            st.success(msg)
             st.rerun()
             
         except Exception as e:
