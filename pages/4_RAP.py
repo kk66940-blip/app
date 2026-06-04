@@ -37,35 +37,14 @@ with col2:
     st.write("")
     if st.button("🔄 Buat/Update RAP", type="primary", use_container_width=True):
         try:
-            # Ambil semua RAB items terlebih dahulu
-            rab_items = supabase.table("rab_items")\
-                .select("id")\
-                .eq("project_id", project_id)\
-                .execute().data
-            
-            valid_rab_ids = {item['id'] for item in rab_items}
-            
-            # Hapus RAP lama
             supabase.table("rap_items").delete().eq("project_id", project_id).execute()
             
-            # Ambil data RAB lengkap
-            rab_items_full = supabase.table("rab_items")\
+            rab_items = supabase.table("rab_items")\
                 .select("*")\
                 .eq("project_id", project_id)\
-                .order("level").order("sort_order")\
                 .execute().data
             
-            inserted_count = 0
-            skipped_invalid_parent = 0
-            
-            for item in rab_items_full:
-                parent_id = item.get('parent_id')
-                
-                # Validasi parent_id (harus ada di RAB atau None)
-                if parent_id is not None and parent_id not in valid_rab_ids:
-                    parent_id = None   # fallback ke None jika invalid
-                    skipped_invalid_parent += 1
-                
+            for item in rab_items:
                 rap_data = {
                     "project_id": project_id,
                     "rab_item_id": item['id'],
@@ -74,21 +53,15 @@ with col2:
                     "unit": item.get('unit', ''),
                     "volume": item.get('volume', 0),
                     "planned_price": item.get('unit_price', 0),
-                    "execution_price": round(item.get('unit_price', 0) * percentage / 100),
+                    "execution_price": (item.get('unit_price', 0) * percentage / 100),
                     "upah": 0,
                     "level": item.get('level', 0),
-                    "parent_id": parent_id
+                    "parent_id": item.get('parent_id')
                 }
                 supabase.table("rap_items").insert(rap_data).execute()
-                inserted_count += 1
             
-            msg = f"✅ RAP berhasil dibuat! ({inserted_count} item)"
-            if skipped_invalid_parent > 0:
-                msg += f" | {skipped_invalid_parent} item punya parent_id invalid (diset ke None)"
-            
-            st.success(msg)
+            st.success("✅ RAP berhasil dibuat!")
             st.rerun()
-            
         except Exception as e:
             st.error(f"❌ Error: {str(e)}")
 
@@ -307,85 +280,51 @@ if not rap_items:
     st.stop()
 
 def display_rap_like_rab(items):
-    """Tampilan RAP persis seperti menu RAB - Sub item tersembunyi di dalam main item"""
-    sorted_items = sorted(items, key=lambda x: x.get('id', 0))
-    i = 0
+    """Tampilan RAP sederhana tapi rapi berdasarkan Level (paling stabil)"""
+    if not items:
+        return
 
-    st.subheader("Struktur RAP")
+    # Group by level
+    from collections import defaultdict
+    level_map = defaultdict(list)
+    for item in items:
+        lvl = item.get('level', 0)
+        level_map[lvl].append(item)
+    
+    for lvl in sorted(level_map.keys()):
+        level_map[lvl] = sorted(level_map[lvl], key=lambda x: (x.get('sort_order', 0), x.get('id', 0)))
 
-    while i < len(sorted_items):
-        item = sorted_items[i]
-        desc = item.get('description', '').strip().lower()
-        volume = item.get('volume') or 0
-        is_main = (volume == 0) and ("pekerjaan" in desc)
+    st.subheader("📊 Struktur RAP (Hierarkis berdasarkan Level)")
 
-        if is_main:
-            # Main Item
+    for lvl in sorted(level_map.keys()):
+        for item in level_map[lvl]:
+            indent = "　" * lvl
             code = item.get('code', '')
-            title = f"{code} - {item.get('description','')}" if code else item.get('description','')
+            desc = item.get('description', '')
+            
+            prefix = "▶ " if lvl == 0 else "└─ "
+            title = f"{indent}{prefix}{code} - {desc}" if code else f"{indent}{prefix}{desc}"
+
+            total_rencana = (item.get("volume") or 0) * (item.get("planned_price") or 0)
+            total_pelaksanaan = (item.get("volume") or 0) * (item.get("execution_price") or 0)
+            total_upah = (item.get("upah") or 0) * (item.get("volume") or 0)
 
             with st.expander(f"**{title}**", expanded=False):
                 col1, col2, col3 = st.columns(3)
-                col1.write(f"**Volume:** {item.get('volume','0')} {item.get('unit','')}")
-                col2.write(f"**Harga Rencana:** {format_rupiah(item.get('planned_price',0))}")
-                col3.write(f"**Harga Pelaksanaan:** {format_rupiah(item.get('execution_price',0))}")
+                col1.metric("Volume", f"{item.get('volume','0')} {item.get('unit','')}")
+                col2.metric("Harga Rencana", format_rupiah(item.get('planned_price',0)))
+                col3.metric("Harga Pelaksanaan", format_rupiah(item.get('execution_price',0)))
+
+                st.caption(f"**Total Rencana:** {format_rupiah(total_rencana)} | **Total Pelaksanaan:** {format_rupiah(total_pelaksanaan)} | **Total + Upah:** {format_rupiah(total_upah)}")
 
                 col_edit, col_delete = st.columns(2)
                 with col_edit:
-                    if st.button("✏️ Edit", key=f"edit_main_{item['id']}"):
+                    if st.button("✏️ Edit Harga", key=f"edit_{item['id']}", use_container_width=True):
                         st.session_state.edit_rap_item = item
                         st.rerun()
                 with col_delete:
-                    if st.button("🗑️ Hapus", key=f"del_main_{item['id']}"):
+                    if st.button("🗑️ Hapus", key=f"del_{item['id']}", use_container_width=True):
                         st.warning("Fitur hapus akan ditambahkan nanti")
-
-                # === SUB ITEMS DI DALAM MAIN (TERSembunyi) ===
-                sub_num = 0
-                j = i + 1
-                while j < len(sorted_items):
-                    child = sorted_items[j]
-                    child_desc = child.get('description', '').strip().lower()
-                    child_vol = child.get('volume') or 0
-                    child_is_main = (child_vol == 0) and ("pekerjaan" in child_desc)
-
-                    if child_is_main:
-                        break
-
-                    sub_num += 1
-                    child_code = child.get('code', '')
-                    child_title = f"{child_code} - {child.get('description','')}" if child_code else child.get('description','')
-
-                    total_rencana = (child.get("volume") or 0) * (child.get("planned_price") or 0)
-                    total_pelaksanaan = (child.get("volume") or 0) * (child.get("execution_price") or 0)
-                    total_upah = (child.get("upah") or 0) * (child.get("volume") or 0)
-                    total_biaya = total_pelaksanaan + total_upah
-
-                    with st.expander(f"    {child_title}"):
-                        col1, col2, col3 = st.columns(3)
-                        col1.write(f"**Volume:** {child.get('volume','0')} {child.get('unit','')}")
-                        col2.write(f"**Harga Rencana:** {format_rupiah(child.get('planned_price',0))}")
-                        col3.write(f"**Harga Pelaksanaan:** {format_rupiah(child.get('execution_price',0))}")
-
-                        col_a, col_b, col_c = st.columns(3)
-                        col_a.write(f"**Total Rencana:** {format_rupiah(total_rencana)}")
-                        col_b.write(f"**Total Pelaksanaan:** {format_rupiah(total_pelaksanaan)}")
-                        col_c.write(f"**Total + Upah:** {format_rupiah(total_biaya)}")
-
-                        col_edit, col_delete = st.columns(2)
-                        with col_edit:
-                            if st.button("✏️ Edit", key=f"edit_{child['id']}"):
-                                st.session_state.edit_rap_item = child
-                                st.rerun()
-                        with col_delete:
-                            if st.button("🗑️ Hapus", key=f"del_{child['id']}"):
-                                st.warning("Fitur hapus akan ditambahkan nanti")
-
-                    j += 1
-
-            i = j  # lompat ke item berikutnya setelah sub items
-
-        else:
-            i += 1
 
     # Form Edit
     if "edit_rap_item" in st.session_state:
