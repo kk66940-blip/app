@@ -280,7 +280,7 @@ if not rap_items:
     st.stop()
 
 def display_rap_like_rab(items):
-    """Tampilan RAP yang bersih berdasarkan Level"""
+    """Tampilan RAP bersih berdasarkan Level"""
     if not items:
         return
 
@@ -312,7 +312,7 @@ def display_rap_like_rab(items):
             total_pelaksanaan = (item.get("volume") or 0) * (item.get("execution_price") or 0)
             total_upah = (item.get("upah") or 0) * (item.get("volume") or 0)
 
-            with st.expander(f"**{title}**", expanded=False):
+            with st.expander(title, expanded=False):
                 col1, col2, col3 = st.columns(3)
                 col1.metric("Volume", f"{item.get('volume','0')} {item.get('unit','')}")
                 col2.metric("Harga Rencana", format_rupiah(item.get('planned_price',0)))
