@@ -280,55 +280,53 @@ if not rap_items:
     st.stop()
 
 def display_rap_like_rab(items):
-    """Tampilan RAP bersih berdasarkan Level (semua level ditampilkan)"""
+    """Tampilan RAP dengan Parent-Child Hierarchy (seperti RAB)"""
     if not items:
         return
 
-    from collections import defaultdict
-    level_map = defaultdict(list)
-    for item in items:
-        lvl = item.get('level', 0)
-        level_map[lvl].append(item)
-    
-    for lvl in level_map:
-        level_map[lvl] = sorted(level_map[lvl], key=lambda x: (x.get('sort_order', 0), x.get('id', 0)))
+    children_map = build_rap_tree(items)
+    root_items = get_root_items(items)
 
-    st.subheader("📊 Struktur RAP (Hierarkis berdasarkan Level)")
+    st.subheader("📊 Struktur RAP (Hierarkis)")
 
-    for lvl in sorted(level_map.keys()):
-        items_in_level = level_map[lvl]
-        for item in items_in_level:
-            indent = "　" * lvl
-            code = item.get('code', '')
-            desc = item.get('description', '')
-            
-            if lvl == 0:
-                prefix = "▶ "
-            else:
-                prefix = "└─ "
-            
-            title = f"{indent}{prefix}{code} - {desc}" if code else f"{indent}{prefix}{desc}"
+    def render_item(item, level=0):
+        indent = "　" * level
+        code = item.get('code', '')
+        desc = item.get('description', '')
+        
+        if level == 0:
+            title = f"▶ {code} - {desc}" if code else f"▶ {desc}"
+        else:
+            title = f"{indent}└─ {code} - {desc}" if code else f"{indent}└─ {desc}"
 
-            total_rencana = (item.get("volume") or 0) * (item.get("planned_price") or 0)
-            total_pelaksanaan = (item.get("volume") or 0) * (item.get("execution_price") or 0)
-            total_upah = (item.get("upah") or 0) * (item.get("volume") or 0)
+        total_rencana = (item.get("volume") or 0) * (item.get("planned_price") or 0)
+        total_pelaksanaan = (item.get("volume") or 0) * (item.get("execution_price") or 0)
+        total_upah = (item.get("upah") or 0) * (item.get("volume") or 0)
+        total_biaya = total_pelaksanaan + total_upah
 
-            with st.expander(title, expanded=False):
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Volume", f"{item.get('volume','0')} {item.get('unit','')}")
-                col2.metric("Harga Rencana", format_rupiah(item.get('planned_price',0)))
-                col3.metric("Harga Pelaksanaan", format_rupiah(item.get('execution_price',0)))
+        with st.expander(f"**{title}**", expanded=False):
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Volume", f"{item.get('volume','0')} {item.get('unit','')}")
+            col2.metric("Harga Rencana", format_rupiah(item.get('planned_price',0)))
+            col3.metric("Harga Pelaksanaan", format_rupiah(item.get('execution_price',0)))
 
-                st.caption(f"**Total Rencana:** {format_rupiah(total_rencana)} | **Total Pelaksanaan:** {format_rupiah(total_pelaksanaan)} | **Total + Upah:** {format_rupiah(total_upah)}")
+            st.caption(f"**Total Rencana:** {format_rupiah(total_rencana)} | **Total Pelaksanaan:** {format_rupiah(total_pelaksanaan)} | **Total + Upah:** {format_rupiah(total_biaya)}")
 
-                col_edit, col_delete = st.columns(2)
-                with col_edit:
-                    if st.button("✏️ Edit Harga", key=f"edit_{item['id']}", use_container_width=True):
-                        st.session_state.edit_rap_item = item
-                        st.rerun()
-                with col_delete:
-                    if st.button("🗑️ Hapus", key=f"del_{item['id']}", use_container_width=True):
-                        st.warning("Fitur hapus akan ditambahkan nanti")
+            col_edit, col_delete = st.columns(2)
+            with col_edit:
+                if st.button("✏️ Edit Harga", key=f"edit_{item['id']}", use_container_width=True):
+                    st.session_state.edit_rap_item = item
+                    st.rerun()
+            with col_delete:
+                if st.button("🗑️ Hapus", key=f"del_{item['id']}", use_container_width=True):
+                    st.warning("Fitur hapus akan ditambahkan nanti")
+
+            # Render children (true parent-child nesting)
+            for child in children_map.get(item.get('id'), []):
+                render_item(child, level + 1)
+
+    for root in root_items:
+        render_item(root)
 
     # Form Edit
     if "edit_rap_item" in st.session_state:
