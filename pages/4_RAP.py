@@ -241,26 +241,34 @@ def display_rap_tree(items, parent_id=None, level=0):
                 st.rerun()
 
 
-# ==================== TAMPILAN HIRARKIS (Menggunakan Komponen Reusable) ====================
+# ==================== TAMPILAN HIRARKIS (Versi Mandiri - Aman) ====================
 st.subheader("📊 Struktur RAP (Hirarkis)")
 
-def handle_rap_edit(item):
-    st.session_state.edit_rap_item = item
-    st.rerun()
+from components.hierarchical_tree import display_hierarchical_tree
+from utils.helpers import format_rupiah
+
+def render_rap_content(item):
+    vol = item.get('volume') or 0
+    planned = item.get('planned_price') or 0
+    exec_price = item.get('execution_price') or 0
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Volume", f"{vol:,.2f} {item.get('unit', '')}")
+    col2.metric("Harga Rencana", format_rupiah(planned))
+    col3.metric("Harga Pelaksanaan", format_rupiah(exec_price))
+
+    if st.button("✏️ Edit Harga", key=f"edit_rap_{item['id']}", use_container_width=True):
+        st.session_state.edit_rap_item = item
+        st.rerun()
 
 if rap_items:
-    try:
-        # Removed on_edit_price to use internal fallback (more compatible)
-        display_rap_tree(
-            items=rap_items,
-            key_prefix="rap_page"
-        )
-    except Exception as e:
-        st.error(f"Error saat menampilkan tree RAP: {str(e)}")
-        import traceback
-        st.text(traceback.format_exc())
+    display_hierarchical_tree(
+        items=rap_items,
+        render_content=render_rap_content,
+        key_prefix="rap_safe"
+    )
 else:
-    st.info("Belum ada data RAP. Buat RAP dari RAB di bagian atas.")
+    st.info("Belum ada data RAP.")
 
 st.divider()
 
