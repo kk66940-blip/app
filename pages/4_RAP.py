@@ -25,7 +25,7 @@ if not project_id:
 
 st.divider()
 
-# ==================== BUAT RAP DARI RAB (FINAL SAFE VERSION) ====================
+# ==================== BUAT RAP DARI RAB (VERSI UPSERT - PALING AMAN) ====================
 st.subheader("🔄 Buat RAP dari RAB")
 
 col1, col2 = st.columns([1, 2])
@@ -38,25 +38,20 @@ with col1:
 with col2:
     if st.button("🔄 Buat/Update RAP", type="primary", use_container_width=True):
         try:
-            # Hapus RAP lama
-            supabase.table("rap_items").delete().eq("project_id", project_id).execute()
-
-            # Ambil RAB
             rab_items = supabase.table("rab_items") \
                 .select("*") \
                 .eq("project_id", project_id) \
                 .execute().data
 
             if not rab_items:
-                st.warning("Tidak ada data RAB")
+                st.warning("Tidak ada data RAB.")
                 st.stop()
 
             id_mapping = {}
             count = 0
 
-            # === INSERT DENGAN parent_id = None ===
             for item in rab_items:
-                data = {
+                rap_data = {
                     "project_id": project_id,
                     "rab_item_id": item['id'],
                     "code": item.get('code', ''),
@@ -69,11 +64,18 @@ with col2:
                     "level": item.get('level', 0),
                     "parent_id": None
                 }
-                res = supabase.table("rap_items").insert(data).execute()
-                id_mapping[item['id']] = res.data[0]['id']
+
+                # Gunakan upsert (insert atau update kalau sudah ada)
+                res = supabase.table("rap_items").upsert(
+                    rap_data,
+                    on_conflict="project_id,rab_item_id"
+                ).execute()
+
+                new_id = res.data[0]['id']
+                id_mapping[item['id']] = new_id
                 count += 1
 
-            # === UPDATE parent_id ===
+            # Update parent_id setelah semua data masuk
             for item in rab_items:
                 if item.get('parent_id') and item['parent_id'] in id_mapping:
                     supabase.table("rap_items") \
@@ -85,7 +87,7 @@ with col2:
             st.rerun()
 
         except Exception as e:
-            st.error(f"❌ Error: {str(e)}")
+            st.error(f"❌ Gagal membuat RAP: {str(e)}")
 
 st.divider()
 
