@@ -25,7 +25,7 @@ if not project_id:
 
 st.divider()
 
-# ==================== BUAT RAP DARI RAB (FIX HIERARCHY) ====================
+# ==================== BUAT RAP DARI RAB (VERSI AMAN - FOREIGN KEY FIXED) ====================
 st.subheader("🔄 Buat RAP dari RAB")
 
 col1, col2 = st.columns([1, 2])
@@ -38,26 +38,24 @@ with col1:
 with col2:
     if st.button("🔄 Buat/Update RAP", type="primary", use_container_width=True):
         try:
-            # 1. Hapus data RAP lama
+            # Hapus data RAP lama
             supabase.table("rap_items").delete().eq("project_id", project_id).execute()
 
-            # 2. Ambil semua data RAB
+            # Ambil data RAB
             rab_items = supabase.table("rab_items") \
                 .select("*") \
                 .eq("project_id", project_id) \
-                .order("sort_order") \
                 .execute().data
 
             if not rab_items:
-                st.warning("Tidak ada data RAB untuk proyek ini.")
+                st.warning("Tidak ada data RAB.")
                 st.stop()
 
-            # 3. Mapping ID lama RAB → ID baru RAP
-            id_mapping = {}   # {old_rab_id: new_rap_id}
+            # Mapping: old_rab_id → new_rap_id
+            id_mapping = {}
+            inserted = 0
 
-            inserted_count = 0
-
-            # Insert dulu semua item (tanpa parent_id dulu)
+            # === TAHAP 1: Insert semua item dengan parent_id = None dulu ===
             for item in rab_items:
                 rap_data = {
                     "project_id": project_id,
@@ -70,30 +68,27 @@ with col2:
                     "execution_price": round(item.get('unit_price', 0) * percentage / 100, 2),
                     "upah": 0,
                     "level": item.get('level', 0),
-                    "parent_id": None   # sementara kosong
+                    "parent_id": None          # ← penting: jangan isi dulu
                 }
-                result = supabase.table("rap_items").insert(rap_data).execute()
-                new_id = result.data[0]['id']
+                res = supabase.table("rap_items").insert(rap_data).execute()
+                new_id = res.data[0]['id']
                 id_mapping[item['id']] = new_id
-                inserted_count += 1
+                inserted += 1
 
-            # 4. Update parent_id berdasarkan mapping
+            # === TAHAP 2: Update parent_id setelah semua data masuk ===
             for item in rab_items:
-                if item.get('parent_id'):
-                    new_parent_id = id_mapping.get(item['parent_id'])
-                    if new_parent_id:
-                        supabase.table("rap_items") \
-                            .update({"parent_id": new_parent_id}) \
-                            .eq("id", id_mapping[item['id']]) \
-                            .execute()
+                if item.get('parent_id') and item['parent_id'] in id_mapping:
+                    new_parent = id_mapping[item['parent_id']]
+                    supabase.table("rap_items") \
+                        .update({"parent_id": new_parent}) \
+                        .eq("id", id_mapping[item['id']]) \
+                        .execute()
 
-            st.success(f"✅ Berhasil membuat {inserted_count} item RAP dengan hierarki yang benar!")
+            st.success(f"✅ Berhasil membuat {inserted} item RAP dengan hierarki yang benar!")
             st.rerun()
 
         except Exception as e:
             st.error(f"❌ Gagal membuat RAP: {str(e)}")
-            import traceback
-            st.text(traceback.format_exc())
 
 st.divider()
 
