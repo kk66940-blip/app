@@ -245,46 +245,35 @@ def display_rap_tree(items, parent_id=None, level=0):
                 st.rerun()
 
 
-# ==================== TAMPILAN RAP (PERSIS SEPERTI RAB) ====================
+# ==================== TAMPILAN RAP (PERSIS SEPERTI RAB - MANUAL) ====================
 st.subheader("📊 Struktur RAP (Hirarkis)")
 
-from components.hierarchical_tree import display_hierarchical_tree
 from utils.helpers import format_rupiah
 
-def render_rap_content(item):
-    """Persis seperti tampilan RAB"""
-    code = item.get('code', '')
-    desc = item.get('description', '')
-    vol = item.get('volume') or 0
-    unit = item.get('unit', '')
-    planned = item.get('planned_price') or 0
-    exec_price = item.get('execution_price') or 0
-
-    total = vol * exec_price
-
-    # Layout 3 kolom persis seperti RAB
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Volume", f"{vol:,.2f} {unit}")
-    col2.metric("Harga Satuan", format_rupiah(exec_price))
-    col3.metric("Total", format_rupiah(total))
-
-    # Tombol aksi
-    col_edit, col_delete = st.columns(2)
-    with col_edit:
-        if st.button("✏️ Edit", key=f"rap_edit_{item['id']}", use_container_width=True):
-            st.session_state.edit_rap_item = item
-            st.rerun()
-    with col_delete:
-        if st.button("🗑️ Hapus", key=f"rap_del_{item['id']}", use_container_width=True):
-            st.warning("Fitur hapus akan ditambahkan nanti")
-
-# Panggil komponen hierarkis
 if rap_items:
-    display_hierarchical_tree(
-        items=rap_items,
-        render_content=render_rap_content,
-        key_prefix="rap_exact"
-    )
+    for item in rap_items:
+        code = item.get('code', '')
+        desc = item.get('description', '')
+        vol = item.get('volume') or 0
+        unit = item.get('unit', '')
+        planned = item.get('planned_price') or 0
+        exec_price = item.get('execution_price') or 0
+        total = vol * exec_price
+
+        with st.expander(f"{code} - {desc}", expanded=False):
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Volume", f"{vol:,.2f} {unit}")
+            col2.metric("Harga Satuan", format_rupiah(exec_price))
+            col3.metric("Total", format_rupiah(total))
+
+            col_edit, col_delete = st.columns(2)
+            with col_edit:
+                if st.button("✏️ Edit", key=f"rap_edit_{item['id']}", use_container_width=True):
+                    st.session_state.edit_rap_item = item
+                    st.rerun()
+            with col_delete:
+                if st.button("🗑️ Hapus", key=f"rap_del_{item['id']}", use_container_width=True):
+                    st.warning("Fitur hapus akan ditambahkan nanti")
 else:
     st.info("Belum ada data RAP.")
 st.divider()
