@@ -1,5 +1,12 @@
 import streamlit as st
+import sys
+from pathlib import Path
 import hashlib
+
+# Add project root to path so that 'components' and 'utils' can be imported reliably
+# This fixes import issues on Streamlit Cloud and other deployment environments
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 from utils.supabase_client import get_supabase
 
 st.set_page_config(
