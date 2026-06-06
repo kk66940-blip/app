@@ -9,6 +9,9 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.units import cm
 from collections import defaultdict
 import uuid
+import streamlit as st
+
+from components.hierarchical_tree import display_opname_tree
 
 supabase = get_supabase()
 project_id = st.session_state.get("current_project_id")
@@ -228,77 +231,59 @@ rab_items = supabase.table("rab_items")\
 opname_details = supabase.table("opname_details")\
     .select("*").eq("period_id", current_period_id).execute().data
 
-actual_map = {d['rab_item_id']: d for d in opname_details}
+# ==================== DATA & HANDLER ====================
+actual_map = {d['rab_item_id']: d.get('actual_volume', 0) for d in opname_details}
+photo_map = {d['rab_item_id']: d.get('photo_url') for d in opname_details}
 
-def build_opname_tree(parent_id=None, level=0):
-    children = [item for item in rab_items if item.get('parent_id') == parent_id]
-    for item in sorted(children, key=lambda x: x.get('sort_order', 0)):
+def handle_save_opname(item, new_actual, uploaded_file):
+    """Callback untuk menyimpan volume + foto"""
+    try:
         rab_id = item['id']
-        op_data = actual_map.get(rab_id, {})
-        actual_vol = op_data.get('actual_volume', 0)
-        photo_url = op_data.get('photo_url')
+        existing = supabase.table("opname_details") \
+            .select("id").eq("period_id", current_period_id).eq("rab_item_id", rab_id).execute()
 
-        vol = item.get('volume', 0) or 0
-        price = item.get('unit_price', 0) or 0
-        is_main = (item.get('level', 0) == 0) or (vol == 0 and "pekerjaan" in item.get('description', '').lower())
+        data = {
+            "period_id": current_period_id,
+            "rab_item_id": rab_id,
+            "actual_volume": new_actual
+        }
 
-        if is_main:
-            with st.expander(f"▶ {item.get('code','')} - {item.get('description','')}", expanded=False):
-                st.markdown("**MAIN ITEM**")
-                build_opname_tree(rab_id, level + 1)
+        if uploaded_file:
+            file_ext = uploaded_file.name.split(".")[-1].lower()
+            unique_filename = f"{uuid.uuid4()}.{file_ext}"
+            file_path = f"opname/{current_period_id}/{unique_filename}"
+
+            supabase.storage.from_("opname-photos").upload(
+                path=file_path,
+                file=uploaded_file.getvalue(),
+                file_options={"content-type": uploaded_file.type}
+            )
+            public_url = supabase.storage.from_("opname-photos").get_public_url(file_path)
+            data["photo_url"] = public_url
+
+        if existing.data:
+            supabase.table("opname_details").update(data) \
+                .eq("period_id", current_period_id).eq("rab_item_id", rab_id).execute()
+            st.success("✅ Volume + Foto berhasil diupdate!")
         else:
-            with st.expander(f"{'　' * level}{item.get('code','')} - {item.get('description','')}", expanded=False):
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Volume Rencana", f"{vol:,.2f} {item.get('unit','')}")
-                col2.metric("Harga Satuan", f"Rp {price:,.0f}")
-                col3.metric("Total Rencana", f"Rp {(vol * price):,.0f}")
+            supabase.table("opname_details").insert(data).execute()
+            st.success("✅ Volume + Foto berhasil disimpan!")
 
-                st.divider()
-                new_actual = st.number_input("Volume Aktual Periode Ini", value=float(actual_vol), step=0.01, key=f"actual_{rab_id}")
+        st.rerun()
+    except Exception as e:
+        st.error(f"Gagal menyimpan: {str(e)}")
 
-                # UPLOAD FOTO
-                st.markdown("**📸 Upload Bukti Foto**")
-                uploaded_file = st.file_uploader("Pilih foto (jpg/png/jpeg)", type=["jpg", "png", "jpeg"], 
-                                                 key=f"foto_uploader_{rab_id}")
 
-                if st.button("💾 Simpan Volume + Foto", key=f"save_btn_{rab_id}"):
-                    try:
-                        existing = supabase.table("opname_details") \
-                            .select("id").eq("period_id", current_period_id).eq("rab_item_id", rab_id).execute()
+# ==================== TAMPILAN HIRARKIS (Komponen Reusable) ====================
+st.subheader("Struktur Opname")
 
-                        data = {
-                            "period_id": current_period_id,
-                            "rab_item_id": rab_id,
-                            "actual_volume": new_actual
-                        }
+display_opname_tree(
+    items=rab_items,
+    actual_map=actual_map,
+    on_save=handle_save_opname,
+    show_photo_upload=True,
+    key_prefix="opname_main"
+)
 
-                        if uploaded_file:
-                            file_ext = uploaded_file.name.split(".")[-1].lower()
-                            unique_filename = f"{uuid.uuid4()}.{file_ext}"
-                            file_path = f"opname/{current_period_id}/{unique_filename}"
-
-                            supabase.storage.from_("opname-photos").upload(
-                                path=file_path, file=uploaded_file.getvalue(),
-                                file_options={"content-type": uploaded_file.type}
-                            )
-                            public_url = supabase.storage.from_("opname-photos").get_public_url(file_path)
-                            data["photo_url"] = public_url
-
-                        if existing.data:
-                            supabase.table("opname_details").update(data) \
-                                .eq("period_id", current_period_id).eq("rab_item_id", rab_id).execute()
-                            st.success("✅ Berhasil diupdate!")
-                        else:
-                            supabase.table("opname_details").insert(data).execute()
-                            st.success("✅ Berhasil disimpan!")
-
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Gagal menyimpan: {str(e)}")
-
-                if photo_url:
-                    st.image(photo_url, width=280, caption="Foto Bukti Opname")
-
-                build_opname_tree(rab_id, level + 1)
-
-build_opname_tree()
+# Tampilkan foto yang sudah ada (opsional, jika ingin ditampilkan di luar komponen)
+# Bisa dikembangkan lebih lanjut jika diperlukan preview foto global.

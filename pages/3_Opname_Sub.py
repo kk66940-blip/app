@@ -9,6 +9,8 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.units import cm
 from collections import defaultdict
 
+from components.hierarchical_tree import display_opname_tree
+
 supabase = get_supabase()
 project_id = st.session_state.get("current_project_id")
 project_name = st.session_state.get("selected_project_name", "Proyek")
@@ -253,57 +255,31 @@ opname_sub_details = supabase.table("opname_sub_details")\
 actual_map = {d['rab_item_id']: d['volume_actual'] for d in opname_sub_details}
 rap_price_map = {r['rab_item_id']: r.get('execution_price', 0) for r in rap_items}
 
-def build_opname_sub_tree(parent_id=None, level=0):
-    children = [item for item in rab_items if item.get('parent_id') == parent_id]
+def handle_save_opname_sub(item, new_actual, uploaded_file):
+    """Callback untuk Opname Sub"""
+    try:
+        supabase.table("opname_sub_details").upsert({
+            "period_id": current_period_id,
+            "rab_item_id": item['id'],
+            "volume_actual": new_actual
+        }).execute()
+        st.success("✅ Volume Sub berhasil disimpan!")
+        st.rerun()
+    except Exception as e:
+        st.error(f"Error: {e}")
 
-    for item in sorted(children, key=lambda x: x.get('sort_order', 0)):
-        rab_id = item['id']
-        actual_vol = actual_map.get(rab_id, 0)
-        vol = item.get('volume', 0) or 0
-        price = rap_price_map.get(rab_id, 0) or 0
 
-        kumul = actual_vol
-        persen = (kumul / vol * 100) if vol > 0 else 0
-        nilai_ini = actual_vol * price
-        nilai_kumul = kumul * price
+# ==================== TAMPILAN HIRARKIS ====================
+st.subheader("Struktur Opname Sub (Harga RAP)")
 
-        title = f"{item.get('code','')} - {item.get('description','')}"
-        is_main = (item.get('level', 0) == 0) or (vol == 0 and "pekerjaan" in item.get('description', '').lower())
-
-        if is_main:
-            with st.expander(f"▶ {title}", expanded=False):
-                st.markdown("**MAIN ITEM (RAP)**")
-                build_opname_sub_tree(rab_id, level + 1)
-        else:
-            with st.expander(f"{'　' * level}{title}", expanded=False):
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Volume Rencana", f"{vol:,.2f} {item.get('unit','')}")
-                col2.metric("Harga RAP", f"Rp {price:,.0f}")
-                col3.metric("Total Rencana (RAP)", f"Rp {(vol * price):,.0f}")
-
-                st.divider()
-
-                new_actual = st.number_input("Volume Aktual (Sub)", value=float(actual_vol), step=0.01, key=f"sub_actual_{rab_id}")
-
-                if st.button("💾 Simpan Volume Sub", key=f"save_sub_{rab_id}"):
-                    try:
-                        supabase.table("opname_sub_details").upsert({
-                            "period_id": current_period_id,
-                            "rab_item_id": rab_id,
-                            "volume_actual": new_actual
-                        }).execute()
-                        st.success("Disimpan!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error: {e}")
-
-                foto = st.file_uploader("Upload Bukti Foto", type=["jpg", "png"], key=f"foto_sub_{rab_id}")
-                if foto:
-                    st.success("Foto berhasil diupload (simulasi)")
-
-                build_opname_sub_tree(rab_id, level + 1)
-
-build_opname_sub_tree()
+display_opname_tree(
+    items=rab_items,
+    actual_map=actual_map,
+    rap_price_map=rap_price_map,
+    on_save=handle_save_opname_sub,
+    show_photo_upload=False,   # Saat ini belum ada upload foto di halaman ini
+    key_prefix="opname_sub"
+)
 
 st.divider()
 

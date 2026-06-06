@@ -7,15 +7,10 @@ from io import BytesIO
 
 # ==================== IMPORT BARU ====================
 from utils.ahsp_helper import get_ahsp_for_selection
+from components.hierarchical_tree import display_rab_tree
 
-# Library untuk Export
-import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.units import cm
+# Export (Centralized)
+from utils.export_utils import export_rab_excel, export_rab_pdf
 
 supabase = get_supabase()
 project_id = st.session_state.get("current_project_id")
@@ -180,42 +175,25 @@ st.divider()
 # ==================== STRUKTUR RAB ====================
 st.subheader("Struktur RAB")
 
-def display_rab_tree(items, parent_id=None, level=0):
-    children = [item for item in items if item.get("parent_id") == parent_id]
-    for item in sorted(children, key=lambda x: x.get('sort_order', 0)):
-        indent = "　" * level * 3
-        total = (item.get("volume") or 0) * (item.get("unit_price") or 0)
-        
-        is_match = False
-        if search_term:
-            search_lower = search_term.lower().strip()
-            if search_lower in item.get('code', '').lower() or search_lower in item.get('description', '').lower():
-                is_match = True
-        
-        label = f"{indent}{item.get('code','')} - {item.get('description','')[:65]}"
-        if is_match:
-            label = f"✅ {label}"
+# ==================== TAMPILAN HIRARKIS (Menggunakan Komponen Reusable) ====================
+st.subheader("Struktur RAB")
 
-        with st.expander(label, expanded=bool(search_term)):
-            col1, col2, col3 = st.columns([3,2,2])
-            col1.write(f"**Volume:** {item.get('volume','0')} {item.get('unit','')}")
-            col2.write(f"**Harga Satuan:** {format_rupiah(item.get('unit_price',0))}")
-            col3.write(f"**Total:** {format_rupiah(total)}")
+def handle_rab_edit(item):
+    st.session_state.edit_item = item
+    st.rerun()
 
-            col_edit, col_delete = st.columns(2)
-            with col_edit:
-                if st.button("✏️ Edit", key=f"edit_{item['id']}"):
-                    st.session_state.edit_item = item
-                    st.rerun()
-            with col_delete:
-                if st.button("🗑️ Hapus", key=f"del_{item['id']}"):
-                    st.session_state.delete_item = item
-                    st.rerun()
-
-            display_rab_tree(items, item["id"], level + 1)
+def handle_rab_delete(item):
+    st.session_state.delete_item = item
+    st.rerun()
 
 if filtered_items:
-    display_rab_tree(filtered_items)
+    display_rab_tree(
+        items=filtered_items,
+        on_edit=handle_rab_edit,
+        on_delete=handle_rab_delete,
+        search_term=search_term,
+        key_prefix="rab_page"
+    )
 else:
     if search_term:
         st.warning(f"Tidak ada item yang cocok dengan **'{search_term}'**")
@@ -265,213 +243,7 @@ if "edit_item" in st.session_state:
 
 st.divider()
 
-# ==================== EXPORT FUNCTIONS - MULTI LEVEL TREE (FIXED) ====================
-
-def build_tree(items):
-    """Membangun struktur tree dari flat list berdasarkan parent_id"""
-    children_map = defaultdict(list)
-    for item in items:
-        children_map[item.get('parent_id')].append(item)
-    
-    # Sort setiap level berdasarkan sort_order
-    for pid in children_map:
-        children_map[pid] = sorted(children_map[pid], key=lambda x: (x.get('sort_order', 0), x.get('id', 0)))
-    
-    return children_map
-
-
-def process_tree_for_export(node, children_map, current_path, row_data, grand_total):
-    """
-    Rekursif memproses tree untuk export.
-    - Jika node punya anak → dijadikan HEADER (hijau)
-    - Jika node tidak punya anak → dijadikan baris data biasa
-    """
-    node_id = node['id']
-    children = children_map.get(node_id, [])
-    has_children = len(children) > 0
-
-    # Buat nomor hierarkis saat ini
-    current_number = ".".join(map(str, current_path))
-
-    if has_children:
-        # === HEADER / MAIN ITEM (punya sub) ===
-        row_data.append({
-            'type': 'header',
-            'number': current_number,
-            'description': node.get('description', ''),
-            'unit': '',
-            'volume': 0,
-            'price': 0,
-            'total': 0
-        })
-        
-        # Proses anak-anaknya
-        sub_total = 0
-        for idx, child in enumerate(children, 1):
-            new_path = current_path + [idx]
-            child_result = process_tree_for_export(child, children_map, new_path, [], 0)
-            
-            # Tambahkan baris anak
-            for r in child_result['rows']:
-                row_data.append(r)
-            
-            sub_total += child_result['subtotal']
-        
-        # Tambahkan subtotal setelah semua anak
-        row_data.append({
-            'type': 'subtotal',
-            'number': '',
-            'description': 'SUBTOTAL',
-            'unit': '',
-            'volume': 0,
-            'price': 0,
-            'total': sub_total
-        })
-        
-        return {'rows': row_data, 'subtotal': sub_total}
-    
-    else:
-        # === LEAF ITEM (tidak punya anak) ===
-        vol = node.get('volume', 0) or 0
-        price = node.get('unit_price', 0) or 0
-        total = vol * price
-        
-        row_data.append({
-            'type': 'item',
-            'number': current_number,
-            'description': node.get('description', ''),
-            'unit': node.get('unit', ''),
-            'volume': vol,
-            'price': price,
-            'total': total
-        })
-        
-        return {'rows': row_data, 'subtotal': total}
-
-
-def export_rab_excel_hierarchical(rab_items, project_name):
-    """Export RAB dengan dukungan multi-level hierarchy (Main → Sub → Sub-Sub)"""
-    if not rab_items:
-        st.warning("Tidak ada data RAB untuk diekspor.")
-        return
-
-    children_map = build_tree(rab_items)
-
-    # Ambil root items (yang tidak punya parent atau parent-nya tidak ada di data)
-    all_ids = {item['id'] for item in rab_items}
-    root_items = [item for item in rab_items if item.get('parent_id') is None or item.get('parent_id') not in all_ids]
-    root_items = sorted(root_items, key=lambda x: (x.get('sort_order', 0), x.get('id', 0)))
-
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "RAB"
-
-    # Styling
-    header_fill = PatternFill(start_color="0d6efd", end_color="0d6efd", fill_type="solid")
-    header_font = Font(bold=True, color="FFFFFF", size=11)
-    section_fill = PatternFill(start_color="28a745", end_color="28a745", fill_type="solid")
-    section_font = Font(bold=True, color="FFFFFF", size=11)
-    subtotal_fill = PatternFill(start_color="fff3cd", end_color="fff3cd", fill_type="solid")
-    grand_fill = PatternFill(start_color="d4edda", end_color="d4edda", fill_type="solid")
-    thin_border = Border(left=Side(style='thin'), right=Side(style='thin'),
-                         top=Side(style='thin'), bottom=Side(style='thin'))
-
-    # Header
-    ws.merge_cells('A1:F1')
-    ws['A1'] = f"RENCANA ANGGARAN BIAYA (RAB) - {project_name}"
-    ws['A1'].font = Font(bold=True, size=14, color="0d6efd")
-    ws['A1'].alignment = Alignment(horizontal='center')
-
-    ws.merge_cells('A2:F2')
-    ws['A2'] = f"Tanggal Export: {datetime.now().strftime('%d %B %Y')}"
-    ws['A2'].font = Font(italic=True, size=10)
-
-    headers = ["No", "Uraian Pekerjaan", "Satuan", "Volume", "Harga Satuan (Rp)", "Jumlah (Rp)"]
-    for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=4, column=col, value=header)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal='center')
-        cell.border = thin_border
-
-    row_num = 5
-    grand_total = 0
-    all_rows = []
-
-    # Proses setiap root item secara rekursif
-    for idx, root in enumerate(root_items, 1):
-        result = process_tree_for_export(root, children_map, [idx], [], 0)
-        all_rows.extend(result['rows'])
-        grand_total += result['subtotal']
-
-    # Tulis ke Excel
-    for row in all_rows:
-        if row['type'] == 'header':
-            # Section Header (Hijau)
-            ws.merge_cells(start_row=row_num, start_column=1, end_row=row_num, end_column=6)
-            cell = ws.cell(row=row_num, column=1, value=f"▶ {row['description']}")
-            cell.font = section_font
-            cell.fill = section_fill
-            for c in range(1, 7):
-                ws.cell(row=row_num, column=c).border = thin_border
-                ws.cell(row=row_num, column=c).fill = section_fill
-
-        elif row['type'] == 'subtotal':
-            ws.cell(row=row_num, column=2, value="SUBTOTAL").font = Font(bold=True)
-            ws.cell(row=row_num, column=6, value=row['total']).font = Font(bold=True)
-            ws.cell(row=row_num, column=6).number_format = '#,##0'
-            for c in range(1, 7):
-                ws.cell(row=row_num, column=c).border = thin_border
-                ws.cell(row=row_num, column=c).fill = subtotal_fill
-
-        else:  # type == 'item'
-            ws.cell(row=row_num, column=1, value=row['number']).border = thin_border
-            ws.cell(row=row_num, column=2, value=f"    {row['description']}").border = thin_border
-            ws.cell(row=row_num, column=3, value=row['unit']).border = thin_border
-            ws.cell(row=row_num, column=4, value=row['volume']).border = thin_border
-            ws.cell(row=row_num, column=5, value=row['price']).border = thin_border
-            ws.cell(row=row_num, column=6, value=row['total']).border = thin_border
-
-            ws.cell(row=row_num, column=4).number_format = '#,##0.00'
-            ws.cell(row=row_num, column=5).number_format = '#,##0'
-            ws.cell(row=row_num, column=6).number_format = '#,##0'
-
-        row_num += 1
-
-    # Grand Total
-    row_num += 1
-    ws.merge_cells(start_row=row_num, start_column=2, end_row=row_num, end_column=5)
-    ws.cell(row=row_num, column=2, value="GRAND TOTAL").font = Font(bold=True, size=11)
-    ws.cell(row=row_num, column=2).fill = grand_fill
-    ws.cell(row=row_num, column=2).alignment = Alignment(horizontal='right')
-    ws.cell(row=row_num, column=6, value=grand_total).font = Font(bold=True, size=11)
-    ws.cell(row=row_num, column=6).fill = grand_fill
-    ws.cell(row=row_num, column=6).number_format = '#,##0'
-    for c in range(2, 7):
-        ws.cell(row=row_num, column=c).border = thin_border
-        ws.cell(row=row_num, column=c).fill = grand_fill
-
-    # Lebar kolom
-    ws.column_dimensions['A'].width = 8
-    ws.column_dimensions['B'].width = 55
-    ws.column_dimensions['C'].width = 10
-    ws.column_dimensions['D'].width = 12
-    ws.column_dimensions['E'].width = 18
-    ws.column_dimensions['F'].width = 18
-
-    output = BytesIO()
-    wb.save(output)
-    output.seek(0)
-
-    filename = f"RAB_{project_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.xlsx"
-    st.download_button(
-        label="⬇️ Download Excel (Multi-Level Hierarchy)",
-        data=output,
-        file_name=filename,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True
-    )
-    st.success("✅ Export berhasil dengan struktur multi-level (Main → Sub → Detail)!")
+# ==================== EXPORT (Centralized via utils/export_utils.py) ====================
 
 
 def export_rab_pdf_hierarchical(rab_items, project_name):
@@ -635,11 +407,33 @@ project_name = st.session_state.get("selected_project_name", "Proyek")
 col1, col2 = st.columns(2)
 with col1:
     if st.button("📊 Export ke Excel (Format Profesional)", type="primary", use_container_width=True):
-        export_rab_excel_hierarchical(all_rab_items, project_name)
+        try:
+            buffer = export_rab_excel(all_rab_items, project_name)
+            filename = f"RAB_{project_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+            st.download_button(
+                label="⬇️ Download Excel RAB",
+                data=buffer,
+                file_name=filename,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+        except Exception as e:
+            st.error(f"Error export Excel: {e}")
 
 with col2:
     if st.button("🖨️ Export ke PDF", type="primary", use_container_width=True):
-        export_rab_pdf_hierarchical(all_rab_items, project_name)
+        try:
+            buffer = export_rab_pdf(all_rab_items, project_name)
+            filename = f"RAB_{project_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf"
+            st.download_button(
+                label="⬇️ Download PDF RAB",
+                data=buffer,
+                file_name=filename,
+                mime="application/pdf",
+                use_container_width=True
+            )
+        except Exception as e:
+            st.error(f"Error export PDF: {e}")
 
 
 # ==================== IMPORT RAB DARI EXCEL ====================
