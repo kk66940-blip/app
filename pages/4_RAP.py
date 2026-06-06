@@ -245,13 +245,14 @@ def display_rap_tree(items, parent_id=None, level=0):
                 st.rerun()
 
 
-# ==================== TAMPILAN RAP (LEBIH MIRIP RAB) ====================
+# ==================== TAMPILAN HIRARKIS RAP (SEBAGAIMANA RAB) ====================
 st.subheader("📊 Struktur RAP (Hirarkis)")
 
 from components.hierarchical_tree import display_hierarchical_tree
 from utils.helpers import format_rupiah
 
 def render_rap_content(item):
+    """Render RAP yang serapih RAB"""
     code = item.get('code', '')
     desc = item.get('description', '')
     vol = item.get('volume') or 0
@@ -263,23 +264,14 @@ def render_rap_content(item):
     total_rencana = vol * planned
     total_pelaksanaan = vol * exec_price
 
-    # Header item
-    st.markdown(f"**{code}** — {desc}")
-
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Volume", f"{vol:,.2f} {unit}")
-    col2.metric("Harga Rencana", format_rupiah(planned))
+    # Tampilan utama (mirip RAB)
+    col1, col2, col3 = st.columns([3, 2, 2])
+    col1.write(f"**{code}** — {desc}")
+    col2.metric("Volume", f"{vol:,.2f} {unit}")
     col3.metric("Harga Pelaksanaan", format_rupiah(exec_price))
 
-    # Detail tambahan
-    with st.expander("Detail Perhitungan", expanded=False):
-        st.write(f"**Total Rencana (RAB):** {format_rupiah(total_rencana)}")
-        st.write(f"**Total Pelaksanaan (RAP):** {format_rupiah(total_pelaksanaan)}")
-        
-        if planned > 0:
-            selisih = planned - exec_price
-            persen = (selisih / planned) * 100
-            st.write(f"**Selisih Harga Satuan:** {format_rupiah(selisih)} ({persen:.1f}%)")
+    # Detail lengkap
+    st.caption(f"**Harga Rencana:** {format_rupiah(planned)} | **Total Rencana:** {format_rupiah(total_rencana)}")
 
     # Tombol aksi
     col_edit, col_del = st.columns(2)
@@ -289,17 +281,17 @@ def render_rap_content(item):
             st.rerun()
     with col_del:
         if st.button("🗑️ Hapus", key=f"rap_del_{item['id']}", use_container_width=True):
-            st.warning("Fitur hapus belum tersedia")
+            st.warning("Fitur hapus akan ditambahkan nanti")
 
-# Panggil komponen hierarkis
+# Panggil komponen
 if rap_items:
     display_hierarchical_tree(
         items=rap_items,
         render_content=render_rap_content,
-        key_prefix="rap_v2"
+        key_prefix="rap_final"
     )
 else:
-    st.info("Belum ada data RAP.")
+    st.info("Belum ada data RAP. Buat dulu di bagian atas.")
 
 st.divider()
 
