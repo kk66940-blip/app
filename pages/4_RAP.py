@@ -276,6 +276,7 @@ if rap_items:
                     st.warning("Fitur hapus akan ditambahkan nanti")
 else:
     st.info("Belum ada data RAP.")
+
 st.divider()
 
 # ==================== RINGKASAN ====================
