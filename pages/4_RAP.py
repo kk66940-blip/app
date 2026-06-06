@@ -25,7 +25,7 @@ if not project_id:
 
 st.divider()
 
-# ==================== CREATE RAP FROM RAB ====================
+# ==================== CREATE RAP FROM RAB (VERSI DIPERBAIKI) ====================
 st.subheader("🔄 Buat RAP dari RAB")
 
 col1, col2 = st.columns([1, 2])
@@ -40,16 +40,18 @@ with col1:
 
 with col2:
     st.write("")
-    st.write("")
     if st.button("🔄 Buat/Update RAP", type="primary", use_container_width=True):
         try:
+            # Hapus data RAP lama
             supabase.table("rap_items").delete().eq("project_id", project_id).execute()
-            
-            rab_items = supabase.table("rab_items")\
-                .select("*")\
-                .eq("project_id", project_id)\
+
+            # Ambil data RAB
+            rab_items = supabase.table("rab_items") \
+                .select("*") \
+                .eq("project_id", project_id) \
                 .execute().data
-            
+
+            inserted_count = 0
             for item in rab_items:
                 rap_data = {
                     "project_id": project_id,
@@ -59,17 +61,19 @@ with col2:
                     "unit": item.get('unit', ''),
                     "volume": item.get('volume', 0),
                     "planned_price": item.get('unit_price', 0),
-                    "execution_price": (item.get('unit_price', 0) * percentage / 100),
+                    "execution_price": round(item.get('unit_price', 0) * percentage / 100, 2),
                     "upah": 0,
                     "level": item.get('level', 0),
                     "parent_id": item.get('parent_id')
                 }
                 supabase.table("rap_items").insert(rap_data).execute()
-            
-            st.success("✅ RAP berhasil dibuat!")
-            st.rerun()
+                inserted_count += 1
+
+            st.success(f"✅ Berhasil membuat {inserted_count} item RAP!")
+            st.rerun()   # <- ini penting agar data langsung ter-refresh
+
         except Exception as e:
-            st.error(f"❌ Error: {str(e)}")
+            st.error(f"❌ Gagal membuat RAP: {str(e)}")
 
 st.divider()
 
