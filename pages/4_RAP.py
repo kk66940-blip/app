@@ -25,7 +25,7 @@ if not project_id:
 
 st.divider()
 
-# ==================== BUAT RAP DARI RAB (VERSI ROBUST - HIERARCHY FIXED) ====================
+# ==================== BUAT RAP DARI RAB (VERSI FINAL - SUDAH DIPERBAIKI) ====================
 st.subheader("🔄 Buat RAP dari RAB")
 
 col1, col2 = st.columns([1, 2])
@@ -38,10 +38,10 @@ with col1:
 with col2:
     if st.button("🔄 Buat/Update RAP", type="primary", use_container_width=True):
         try:
-            # 1. Hapus data RAP lama untuk proyek ini
+            # 1. Hapus data RAP lama
             supabase.table("rap_items").delete().eq("project_id", project_id).execute()
 
-            # 2. Ambil semua data RAB (urutkan biar mapping lebih aman)
+            # 2. Ambil semua data RAB
             rab_items = supabase.table("rab_items") \
                 .select("*") \
                 .eq("project_id", project_id) \
@@ -52,11 +52,11 @@ with col2:
                 st.warning("Tidak ada data RAB untuk proyek ini.")
                 st.stop()
 
-            # 3. Mapping: old_rab_id → new_rap_id
+            # 3. Mapping ID
             id_mapping = {}
             inserted_count = 0
 
-            # === TAHAP 1: Insert semua item dulu (parent_id = None sementara) ===
+            # === TAHAP 1: Insert semua item (parent_id = None dulu) ===
             for item in rab_items:
                 rap_data = {
                     "project_id": project_id,
@@ -69,8 +69,8 @@ with col2:
                     "execution_price": round(item.get('unit_price', 0) * percentage / 100, 2),
                     "upah": 0,
                     "level": item.get('level', 0),
-                    "parent_id": None,                    # ← sementara kosong
-                    "sort_order": item.get('sort_order', 0)
+                    "parent_id": None
+                    # sort_order dihapus karena tidak ada di tabel rap_items
                 }
 
                 result = supabase.table("rap_items").insert(rap_data).execute()
@@ -78,7 +78,7 @@ with col2:
                 id_mapping[item['id']] = new_rap_id
                 inserted_count += 1
 
-            # === TAHAP 2: Update parent_id setelah semua data masuk ===
+            # === TAHAP 2: Update parent_id ===
             for item in rab_items:
                 if item.get('parent_id') and item['parent_id'] in id_mapping:
                     new_parent_id = id_mapping[item['parent_id']]
