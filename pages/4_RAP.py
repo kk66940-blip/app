@@ -252,6 +252,7 @@ from components.hierarchical_tree import display_hierarchical_tree
 from utils.helpers import format_rupiah
 
 def render_rap_content(item):
+    """Persis seperti tampilan RAB"""
     code = item.get('code', '')
     desc = item.get('description', '')
     vol = item.get('volume') or 0
@@ -261,13 +262,13 @@ def render_rap_content(item):
 
     total = vol * exec_price
 
-    st.markdown(f"**{code}** - {desc}")
-
+    # Layout 3 kolom persis seperti RAB
     col1, col2, col3 = st.columns(3)
     col1.metric("Volume", f"{vol:,.2f} {unit}")
     col2.metric("Harga Satuan", format_rupiah(exec_price))
     col3.metric("Total", format_rupiah(total))
 
+    # Tombol aksi
     col_edit, col_delete = st.columns(2)
     with col_edit:
         if st.button("✏️ Edit", key=f"rap_edit_{item['id']}", use_container_width=True):
@@ -277,12 +278,12 @@ def render_rap_content(item):
         if st.button("🗑️ Hapus", key=f"rap_del_{item['id']}", use_container_width=True):
             st.warning("Fitur hapus akan ditambahkan nanti")
 
-# Panggil komponen
+# Panggil komponen hierarkis
 if rap_items:
     display_hierarchical_tree(
         items=rap_items,
         render_content=render_rap_content,
-        key_prefix="rap_final"
+        key_prefix="rap_exact"
     )
 else:
     st.info("Belum ada data RAP.")
