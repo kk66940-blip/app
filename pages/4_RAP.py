@@ -265,14 +265,13 @@ def display_rap_tree(items, parent_id=None, level=0):
                 st.rerun()
 
 
-# ==================== TAMPILAN HIRARKIS RAP (Mirip RAB) ====================
+# ==================== TAMPILAN RAP (LEBIH MIRIP RAB) ====================
 st.subheader("📊 Struktur RAP (Hirarkis)")
 
 from components.hierarchical_tree import display_hierarchical_tree
 from utils.helpers import format_rupiah
 
 def render_rap_content(item):
-    """Render konten RAP yang lebih lengkap dan rapi (mirip RAB)"""
     code = item.get('code', '')
     desc = item.get('description', '')
     vol = item.get('volume') or 0
@@ -283,53 +282,44 @@ def render_rap_content(item):
 
     total_rencana = vol * planned
     total_pelaksanaan = vol * exec_price
-    total_upah = vol * upah
-    
-    # Hitung selisih (variance)
-    variance = total_rencana - total_pelaksanaan
-    variance_percent = ((planned - exec_price) / planned * 100) if planned > 0 else 0
 
-    # === TAMPILAN UTAMA ===
-    col1, col2, col3 = st.columns([2.5, 2, 2])
-    
-    with col1:
-        st.write(f"**{code}**")
-        st.caption(desc[:80] + "..." if len(desc) > 80 else desc)
-    
-    with col2:
-        st.metric("Volume", f"{vol:,.2f} {unit}")
-    
-    with col3:
-        st.metric("Harga Pelaksanaan", format_rupiah(exec_price))
+    # Header item
+    st.markdown(f"**{code}** — {desc}")
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Volume", f"{vol:,.2f} {unit}")
+    col2.metric("Harga Rencana", format_rupiah(planned))
+    col3.metric("Harga Pelaksanaan", format_rupiah(exec_price))
 
     # Detail tambahan
-    with st.expander("Lihat Detail Perhitungan", expanded=False):
-        col_a, col_b, col_c = st.columns(3)
-        col_a.metric("Harga Rencana (RAB)", format_rupiah(planned))
-        col_b.metric("Total Rencana", format_rupiah(total_rencana))
-        col_c.metric("Total Pelaksanaan", format_rupiah(total_pelaksanaan))
-
-        st.divider()
+    with st.expander("Detail Perhitungan", expanded=False):
+        st.write(f"**Total Rencana (RAB):** {format_rupiah(total_rencana)}")
+        st.write(f"**Total Pelaksanaan (RAP):** {format_rupiah(total_pelaksanaan)}")
         
-        col_d, col_e = st.columns(2)
-        col_d.metric("Selisih (RAB - RAP)", format_rupiah(variance))
-        col_e.metric("Persentase Hemat/Boros", f"{variance_percent:.1f}%")
+        if planned > 0:
+            selisih = planned - exec_price
+            persen = (selisih / planned) * 100
+            st.write(f"**Selisih Harga Satuan:** {format_rupiah(selisih)} ({persen:.1f}%)")
 
-    # Tombol Edit
-    if st.button("✏️ Edit Harga Pelaksanaan", key=f"rap_edit_{item['id']}", use_container_width=True):
-        st.session_state.edit_rap_item = item
-        st.rerun()
+    # Tombol aksi
+    col_edit, col_del = st.columns(2)
+    with col_edit:
+        if st.button("✏️ Edit Harga", key=f"rap_edit_{item['id']}", use_container_width=True):
+            st.session_state.edit_rap_item = item
+            st.rerun()
+    with col_del:
+        if st.button("🗑️ Hapus", key=f"rap_del_{item['id']}", use_container_width=True):
+            st.warning("Fitur hapus belum tersedia")
 
-
-# ==================== PANGGIL KOMPONEN ====================
+# Panggil komponen hierarkis
 if rap_items:
     display_hierarchical_tree(
         items=rap_items,
         render_content=render_rap_content,
-        key_prefix="rap_final"
+        key_prefix="rap_v2"
     )
 else:
-    st.info("Belum ada data RAP. Silakan buat RAP dari RAB terlebih dahulu di bagian atas.")
+    st.info("Belum ada data RAP.")
 
 st.divider()
 
