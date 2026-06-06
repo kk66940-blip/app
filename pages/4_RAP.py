@@ -1,4 +1,10 @@
 import streamlit as st
+import sys
+from pathlib import Path
+
+# Ensure components can be imported when running on Streamlit Cloud
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from utils.supabase_client import get_supabase
 from utils.helpers import format_rupiah
 from utils.export_utils import export_hierarchical_excel, export_hierarchical_pdf

@@ -1,4 +1,10 @@
 import streamlit as st
+import sys
+from pathlib import Path
+
+# Ensure components can be imported on Streamlit Cloud / deployment
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from utils.supabase_client import get_supabase
 from utils.helpers import format_rupiah
 from datetime import datetime

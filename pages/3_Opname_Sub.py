@@ -8,6 +8,11 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.units import cm
 from collections import defaultdict
+import sys
+from pathlib import Path
+
+# Path fix for deployment (Streamlit Cloud)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from components.hierarchical_tree import display_opname_tree
 
