@@ -25,7 +25,7 @@ if not project_id:
 
 st.divider()
 
-# ==================== BUAT RAP DARI RAB (VERSI UPSERT - PALING AMAN) ====================
+# ==================== BUAT RAP DARI RAB (VERSI SUPER AMAN - NO PARENT_ID) ====================
 st.subheader("🔄 Buat RAP dari RAB")
 
 col1, col2 = st.columns([1, 2])
@@ -38,6 +38,10 @@ with col1:
 with col2:
     if st.button("🔄 Buat/Update RAP", type="primary", use_container_width=True):
         try:
+            # Hapus RAP lama
+            supabase.table("rap_items").delete().eq("project_id", project_id).execute()
+
+            # Ambil RAB
             rab_items = supabase.table("rab_items") \
                 .select("*") \
                 .eq("project_id", project_id) \
@@ -47,9 +51,7 @@ with col2:
                 st.warning("Tidak ada data RAB.")
                 st.stop()
 
-            id_mapping = {}
             count = 0
-
             for item in rab_items:
                 rap_data = {
                     "project_id": project_id,
@@ -62,26 +64,10 @@ with col2:
                     "execution_price": round(item.get('unit_price', 0) * percentage / 100, 2),
                     "upah": 0,
                     "level": item.get('level', 0),
-                    "parent_id": None
+                    "parent_id": None   # Paksa None agar tidak error foreign key
                 }
-
-                # Gunakan upsert (insert atau update kalau sudah ada)
-                res = supabase.table("rap_items").upsert(
-                    rap_data,
-                    on_conflict="project_id,rab_item_id"
-                ).execute()
-
-                new_id = res.data[0]['id']
-                id_mapping[item['id']] = new_id
+                supabase.table("rap_items").upsert(rap_data, on_conflict="project_id,rab_item_id").execute()
                 count += 1
-
-            # Update parent_id setelah semua data masuk
-            for item in rab_items:
-                if item.get('parent_id') and item['parent_id'] in id_mapping:
-                    supabase.table("rap_items") \
-                        .update({"parent_id": id_mapping[item['parent_id']]}) \
-                        .eq("id", id_mapping[item['id']]) \
-                        .execute()
 
             st.success(f"✅ Berhasil membuat {count} item RAP!")
             st.rerun()
