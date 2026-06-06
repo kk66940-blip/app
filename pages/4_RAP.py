@@ -250,14 +250,13 @@ def handle_rap_edit(item):
 
 if rap_items:
     try:
+        # Removed on_edit_price to use internal fallback (more compatible)
         display_rap_tree(
             items=rap_items,
-            on_edit_price=handle_rap_edit,
             key_prefix="rap_page"
         )
     except Exception as e:
         st.error(f"Error saat menampilkan tree RAP: {str(e)}")
-        # This will show full traceback in the logs (useful for debugging on Cloud)
         import traceback
         st.text(traceback.format_exc())
 else:
