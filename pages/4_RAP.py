@@ -245,43 +245,42 @@ def display_rap_tree(items, parent_id=None, level=0):
                 st.rerun()
 
 
-# ==================== TAMPILAN HIRARKIS RAP (SEBAGAIMANA RAB) ====================
+# ==================== TAMPILAN RAP (PERSIS SEPERTI RAB) ====================
 st.subheader("📊 Struktur RAP (Hirarkis)")
 
 from components.hierarchical_tree import display_hierarchical_tree
 from utils.helpers import format_rupiah
 
 def render_rap_content(item):
-    """Render RAP yang serapih RAB"""
+    """Tampilan RAP yang persis seperti RAB"""
     code = item.get('code', '')
     desc = item.get('description', '')
     vol = item.get('volume') or 0
     unit = item.get('unit', '')
     planned = item.get('planned_price') or 0
     exec_price = item.get('execution_price') or 0
-    upah = item.get('upah') or 0
 
-    total_rencana = vol * planned
-    total_pelaksanaan = vol * exec_price
+    total = vol * exec_price
 
-    # Tampilan utama (mirip RAB)
-    col1, col2, col3 = st.columns([3, 2, 2])
-    col1.write(f"**{code}** — {desc}")
-    col2.metric("Volume", f"{vol:,.2f} {unit}")
-    col3.metric("Harga Pelaksanaan", format_rupiah(exec_price))
-
-    # Detail lengkap
-    st.caption(f"**Harga Rencana:** {format_rupiah(planned)} | **Total Rencana:** {format_rupiah(total_rencana)}")
+    # Tampilan utama (persis seperti RAB)
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Volume", f"{vol:,.2f} {unit}")
+    col2.metric("Harga Satuan", format_rupiah(exec_price))
+    col3.metric("Total", format_rupiah(total))
 
     # Tombol aksi
-    col_edit, col_del = st.columns(2)
+    col_edit, col_delete = st.columns(2)
     with col_edit:
-        if st.button("✏️ Edit Harga", key=f"rap_edit_{item['id']}", use_container_width=True):
+        if st.button("✏️ Edit", key=f"rap_edit_{item['id']}", use_container_width=True):
             st.session_state.edit_rap_item = item
             st.rerun()
-    with col_del:
+    with col_delete:
         if st.button("🗑️ Hapus", key=f"rap_del_{item['id']}", use_container_width=True):
             st.warning("Fitur hapus akan ditambahkan nanti")
+
+    # Opsional: tampilkan harga dari RAB
+    with st.expander("Harga dari RAB", expanded=False):
+        st.metric("Harga Rencana RAB", format_rupiah(planned))
 
 # Panggil komponen
 if rap_items:
@@ -291,7 +290,7 @@ if rap_items:
         key_prefix="rap_final"
     )
 else:
-    st.info("Belum ada data RAP. Buat dulu di bagian atas.")
+    st.info("Belum ada data RAP.")
 
 st.divider()
 
