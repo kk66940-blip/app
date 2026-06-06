@@ -248,11 +248,20 @@ def handle_rap_edit(item):
     st.session_state.edit_rap_item = item
     st.rerun()
 
-display_rap_tree(
-    items=rap_items,
-    on_edit_price=handle_rap_edit,
-    key_prefix="rap_page"
-)
+if rap_items:
+    try:
+        display_rap_tree(
+            items=rap_items,
+            on_edit_price=handle_rap_edit,
+            key_prefix="rap_page"
+        )
+    except Exception as e:
+        st.error(f"Error saat menampilkan tree RAP: {str(e)}")
+        # This will show full traceback in the logs (useful for debugging on Cloud)
+        import traceback
+        st.text(traceback.format_exc())
+else:
+    st.info("Belum ada data RAP. Buat RAP dari RAB di bagian atas.")
 
 st.divider()
 
