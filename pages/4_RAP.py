@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
 
+# Ensure components can be imported
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from utils.supabase_client import get_supabase
@@ -97,16 +98,13 @@ with col2:
 
                 status.update(label="✅ RAP berhasil dibuat!", state="complete")
                 st.success(f"🎉 Berhasil membuat {inserted_count} item RAP!")
-                st.caption(f"Persentase yang digunakan: {percentage}%")
                 st.balloons()
                 st.rerun()
 
         except Exception as e:
             status.update(label="❌ Gagal membuat RAP", state="error")
-            st.error(f"❌ Terjadi kesalahan saat membuat RAP: {str(e)}")
-            st.info("Silakan coba lagi. Jika masih error, hubungi developer.")
-            
-            with st.expander("Detail teknis (untuk developer)"):
+            st.error(f"❌ Terjadi kesalahan: {str(e)}")
+            with st.expander("Detail Error"):
                 import traceback
                 st.code(traceback.format_exc())
 
@@ -161,18 +159,11 @@ with col2:
                 st.warning("Tidak ada data RAP untuk diekspor.")
                 st.stop()
 
-            # Custom total function untuk RAP (menggunakan execution_price)
-            def get_rap_total(item):
-                vol = item.get('volume', 0) or 0
-                price = item.get('execution_price', 0) or 0
-                return vol * price
-
             buffer = export_hierarchical_pdf(
                 items=rap_items,
                 project_name=project_name,
                 title="RENCANA ANGGARAN PELAKSANAAN (RAP)",
-                filename_prefix="RAP",
-                get_total_func=get_rap_total
+                filename_prefix="RAP"
             )
 
             filename = f"RAP_{project_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf"
