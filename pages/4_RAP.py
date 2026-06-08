@@ -8,8 +8,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from utils.supabase_client import get_supabase
 from utils.helpers import format_rupiah
 from utils.export_utils import export_hierarchical_excel, export_hierarchical_pdf
-from components.hierarchical_tree import display_rap_tree
 from datetime import datetime
+
+# Import komponen tree (dipindah ke atas agar lebih bersih)
+from components.hierarchical_tree import display_rap_tree
 
 supabase = get_supabase()
 
@@ -223,19 +225,20 @@ else:
     filtered_items = rap_items
 
 # ==================== TAMPILKAN TREE MENGGUNAKAN KOMPONEN PROFESIONAL ====================
-from components.hierarchical_tree import display_rap_tree
-
 def handle_edit_price(item):
     """Callback untuk edit harga via komponen"""
     st.session_state.edit_rap_item = item
     st.rerun()
 
-display_rap_tree(
-    items=filtered_items,
-    on_edit_price=handle_edit_price,
-    search_term=search_term,
-    key_prefix="rap_main"
-)
+if not filtered_items:
+    st.info("Tidak ada item RAP yang ditampilkan.")
+else:
+    display_rap_tree(
+        items=filtered_items,
+        on_edit_price=handle_edit_price,
+        search_term=search_term,
+        key_prefix="rap_main"
+    )
 
 # ==================== FORM EDIT HARGA (Global) ====================
 if "edit_rap_item" in st.session_state:
