@@ -182,61 +182,57 @@ with col2:
 st.divider()
 
 # ==================== DAFTAR ITEM RAP ====================
+# ==================== TAMPILAN DATA ====================
 st.subheader("📊 Daftar Item RAP")
 
-# Load data RAP
-try:
-    rap_items = supabase.table("rap_items") \
-        .select("*") \
-        .eq("project_id", project_id) \
-        .order("level") \
-        .execute().data
-except Exception as e:
-    st.error(f"❌ Gagal mengambil data RAP: {str(e)}")
-    st.stop()
+rap_items = supabase.table("rap_items") \
+    .select("*") \
+    .eq("project_id", project_id) \
+    .order("level") \
+    .execute().data
 
 if not rap_items:
-    st.info("Belum ada data RAP untuk proyek ini. Silakan klik tombol **Buat/Update RAP** di atas.")
+    st.info("Belum ada data RAP untuk proyek ini.")
     st.stop()
 
-# Search
-search_term = st.text_input(
-    "🔍 Cari berdasarkan kode atau deskripsi",
-    placeholder="Contoh: plafon, dinding, cat...",
-    key="rap_search"
-).strip().lower()
+search = st.text_input("🔍 Cari berdasarkan kode atau uraian", placeholder="Contoh: plafon, dinding...").strip().lower()
 
-# Filter
-if search_term:
-    filtered_items = [
+filtered = rap_items
+if search:
+    filtered = [
         item for item in rap_items 
-        if search_term in str(item.get('code', '')).lower() 
-        or search_term in str(item.get('description', '')).lower()
+        if search in str(item.get('description', '')).lower() 
+        or search in str(item.get('code', '')).lower()
     ]
-    if not filtered_items:
-        st.warning(f"Tidak ditemukan item yang mengandung kata **'{search_term}'**.")
-else:
-    filtered_items = rap_items
 
-# Display Tree
-def handle_edit_price(item):
-    st.session_state.edit_rap_item = item
-    st.rerun()
+# ==================== FUNGSI TAMPILAN HIERARCHY ====================
+def show_rap_hierarchy(items, parent_id=None, level=0):
+    children = [item for item in items if item.get('parent_id') == parent_id]
+    
+    for item in children:
+        indent = "　" * (level * 2)
+        desc = item.get('description', '')
+        vol = item.get('volume', 0) or 0
+        planned = item.get('planned_price', 0) or 0
+        exec_price = item.get('execution_price', 0) or 0
+        total_exec = vol * exec_price
 
-if not filtered_items:
-    st.info("Tidak ada item RAP yang ditampilkan.")
+        with st.expander(f"{indent}{desc}", expanded=(level <= 1)):
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Volume", f"{vol:,.2f} {item.get('unit', '')}")
+            col2.metric("Harga Rencana", f"Rp {planned:,.0f}")
+            col3.metric("Harga Pelaksanaan", f"Rp {exec_price:,.0f}")
+
+            st.caption(f"**Total Pelaksanaan:** Rp {total_exec:,.0f}")
+
+            # Panggil recursive untuk child
+            show_rap_hierarchy(items, parent_id=item.get('id'), level=level + 1)
+
+# Tampilkan hierarchy
+if filtered:
+    show_rap_hierarchy(filtered)
 else:
-    try:
-        display_rap_tree(
-            items=filtered_items,
-            search_term=search_term,
-            key_prefix="rap_main"
-        )
-    except Exception as e:
-        st.error(f"❌ Terjadi kesalahan saat menampilkan daftar RAP: {str(e)}")
-        with st.expander("Detail Error"):
-            import traceback
-            st.code(traceback.format_exc())
+    st.warning("Tidak ada item yang cocok dengan pencarian.")
 
 # ==================== FORM EDIT HARGA ====================
 if "edit_rap_item" in st.session_state:
