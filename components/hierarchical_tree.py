@@ -138,26 +138,44 @@ def display_rab_tree(
 
 def display_rap_tree(
     items: List[Dict],
-    on_edit_price: Optional[Callable[[Dict], None]] = None,
+    on_edit: Optional[Callable[[Dict], None]] = None,
+    on_delete: Optional[Callable[[Dict], None]] = None,
     search_term: str = "",
-    key_prefix: str = "rap"
+    key_prefix: str = "rap",
+    expanded_by_default: bool = False,
 ) -> None:
-    """Specialized tree for RAP pages (focus on execution price & upah)."""
+    """
+    Specialized hierarchical tree display untuk halaman RAP.
     
+    Fokus pada:
+    - Harga Rencana vs Harga Pelaksanaan
+    - Upah
+    - Total per item
+    
+    Args:
+        items: List data RAP dari database
+        on_edit: Callback ketika tombol Edit ditekan (opsional)
+        on_delete: Callback ketika tombol Hapus ditekan (opsional)
+        search_term: Untuk fitur pencarian (opsional)
+        key_prefix: Prefix untuk key Streamlit (hindari konflik)
+        expanded_by_default: Apakah expander terbuka secara default
+    """
+    from utils.helpers import format_rupiah
+
     def render_rap_content(item: Dict):
-        from utils.helpers import format_rupiah
-        
-        vol = item.get('volume') or 0
-        planned = item.get('planned_price') or 0
-        exec_price = item.get('execution_price') or 0
-        upah = item.get('upah') or 0
+        vol = item.get("volume") or 0
+        unit = item.get("unit", "")
+        planned = item.get("planned_price") or 0
+        exec_price = item.get("execution_price") or 0
+        upah = item.get("upah") or 0
 
         total_rencana = vol * planned
         total_pelaksanaan = vol * exec_price
         total_upah = vol * upah
 
+        # === METRICS ===
         col1, col2, col3 = st.columns(3)
-        col1.metric("Volume", f"{vol:,.2f} {item.get('unit', '')}")
+        col1.metric("Volume", f"{vol:,.2f} {unit}")
         col2.metric("Harga Rencana", format_rupiah(planned))
         col3.metric("Harga Pelaksanaan", format_rupiah(exec_price))
 
@@ -167,23 +185,32 @@ def display_rap_tree(
             f"**Total + Upah:** {format_rupiah(total_upah)}"
         )
 
+        # === ACTION BUTTONS ===
         col_edit, col_del = st.columns(2)
+
         with col_edit:
             if st.button("✏️ Edit Harga", key=f"{key_prefix}_edit_{item['id']}", use_container_width=True):
-                if on_edit_price:
-                    on_edit_price(item)
+                if on_edit:
+                    on_edit(item)
                 else:
                     st.session_state[f"{key_prefix}_edit_item"] = item
                     st.rerun()
+
         with col_del:
             if st.button("🗑️ Hapus", key=f"{key_prefix}_del_{item['id']}", use_container_width=True):
-                st.warning("Fitur hapus akan ditambahkan nanti")
+                if on_delete:
+                    on_delete(item)
+                else:
+                    st.session_state[f"{key_prefix}_delete_item"] = item
+                    st.rerun()
 
+    # Panggil komponen utama
     display_hierarchical_tree(
         items=items,
         render_content=render_rap_content,
         search_term=search_term,
-        key_prefix=key_prefix
+        key_prefix=key_prefix,
+        expanded_by_default=expanded_by_default,
     )
 
 
