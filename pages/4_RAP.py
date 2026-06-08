@@ -109,6 +109,35 @@ with col1:
         )
 
 with col2:
+    if st.button("🖨️ Export ke PDF (Format Profesional)", type="primary", use_container_width=True):
+        rap_items = (
+            supabase.table("rap_items")
+            .select("*")
+            .eq("project_id", project_id)
+            .execute()
+            .data
+        )
+
+        # Fungsi khusus RAP untuk menghitung total
+        def get_rap_total(item):
+            vol = item.get("volume", 0) or 0
+            price = item.get("execution_price", 0) or 0
+            return vol * price
+
+        buffer = export_hierarchical_pdf(
+            items=rap_items,
+            project_name=project_name,
+            title="RENCANA ANGGARAN PELAKSANAAN (RAP)",
+            filename_prefix="RAP",
+            get_total_func=get_rap_total,
+        )
+        st.download_button(
+            "Download PDF", 
+            buffer, 
+            f"RAP_{project_name.replace(' ', '_')}.pdf"
+        )
+
+with col2:
     if st.button("🖨️ Export ke PDF", type="primary", use_container_width=True):
         rap_items = (
             supabase.table("rap_items")
