@@ -145,20 +145,7 @@ def display_rap_tree(
     expanded_by_default: bool = False,
 ) -> None:
     """
-    Specialized hierarchical tree display untuk halaman RAP.
-    
-    Fokus pada:
-    - Harga Rencana vs Harga Pelaksanaan
-    - Upah
-    - Total per item
-    
-    Args:
-        items: List data RAP dari database
-        on_edit: Callback ketika tombol Edit ditekan (opsional)
-        on_delete: Callback ketika tombol Hapus ditekan (opsional)
-        search_term: Untuk fitur pencarian (opsional)
-        key_prefix: Prefix untuk key Streamlit (hindari konflik)
-        expanded_by_default: Apakah expander terbuka secara default
+    Specialized tree untuk RAP (lebih baik & konsisten).
     """
     from utils.helpers import format_rupiah
 
@@ -173,7 +160,6 @@ def display_rap_tree(
         total_pelaksanaan = vol * exec_price
         total_upah = vol * upah
 
-        # === METRICS ===
         col1, col2, col3 = st.columns(3)
         col1.metric("Volume", f"{vol:,.2f} {unit}")
         col2.metric("Harga Rencana", format_rupiah(planned))
@@ -185,9 +171,7 @@ def display_rap_tree(
             f"**Total + Upah:** {format_rupiah(total_upah)}"
         )
 
-        # === ACTION BUTTONS ===
         col_edit, col_del = st.columns(2)
-
         with col_edit:
             if st.button("✏️ Edit Harga", key=f"{key_prefix}_edit_{item['id']}", use_container_width=True):
                 if on_edit:
@@ -204,7 +188,6 @@ def display_rap_tree(
                     st.session_state[f"{key_prefix}_delete_item"] = item
                     st.rerun()
 
-    # Panggil komponen utama
     display_hierarchical_tree(
         items=items,
         render_content=render_rap_content,
