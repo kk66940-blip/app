@@ -137,18 +137,18 @@ with col2:
                 st.warning("Tidak ada data untuk diekspor.")
                 st.stop()
 
-            def get_rap_total(item):
-                vol = item.get('volume', 0) or 0
-                price = item.get('execution_price', 0) or 0
-                return vol * price
+def get_rap_total(item):
+    vol = item.get('volume', 0) or 0
+    price = item.get('execution_price', 0) or 0
+    return vol * price
 
-            buffer = export_hierarchical_pdf(
-                items=rap_items,
-                project_name=project_name,
-                title="RENCANA ANGGARAN PELAKSANAAN (RAP)",
-                filename_prefix="RAP",
-                get_total_func=get_rap_total
-            )
+buffer = export_hierarchical_pdf(
+    items=rap_items,
+    project_name=project_name,
+    title="RENCANA ANGGARAN PELAKSANAAN (RAP)",
+    filename_prefix="RAP",
+    get_total_func=get_rap_total     # ← penting
+)
             filename = f"RAP_{project_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf"
             st.download_button("⬇️ Download PDF RAP", buffer, filename, "application/pdf")
             st.success("✅ Export PDF berhasil!")
