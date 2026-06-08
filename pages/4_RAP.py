@@ -93,8 +93,7 @@ with col2:
                         "execution_price": round(item.get('unit_price', 0) * percentage / 100, 2),
                         "upah": 0,
                         "level": item.get('level', 0),
-                        "parent_id": None,
-                        "sort_order": item.get('sort_order', 0)  # Simpan sort_order jika ada
+                        "parent_id": None
                     }
 
                     result = supabase.table("rap_items").insert(rap_data).execute()
