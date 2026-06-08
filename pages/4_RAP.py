@@ -205,34 +205,42 @@ if search:
         or search in str(item.get('code', '')).lower()
     ]
 
-# ==================== FUNGSI TAMPILAN HIERARCHY ====================
-def show_rap_hierarchy(items, parent_id=None, level=0):
-    children = [item for item in items if item.get('parent_id') == parent_id]
+# ==================== FUNGSI TAMPILAN HIERARCHY RAP (VERSI DIPERBAIKI) ====================
+def show_rap_hierarchy(items):
+    # Buat mapping: rab_item_id -> rap_item
+    id_map = {item.get('rab_item_id'): item for item in items if item.get('rab_item_id')}
     
-    for item in children:
+    # Cari parent_id yang valid (hanya yang ada di data RAP)
+    def get_children(parent_rab_id):
+        return [item for item in items if item.get('parent_id') == parent_rab_id]
+
+    def render_node(item, level=0):
         indent = "　" * (level * 2)
         desc = item.get('description', '')
         vol = item.get('volume', 0) or 0
         planned = item.get('planned_price', 0) or 0
         exec_price = item.get('execution_price', 0) or 0
         total_exec = vol * exec_price
+        unit = item.get('unit', '')
 
         with st.expander(f"{indent}{desc}", expanded=(level <= 1)):
             col1, col2, col3 = st.columns(3)
-            col1.metric("Volume", f"{vol:,.2f} {item.get('unit', '')}")
+            col1.metric("Volume", f"{vol:,.2f} {unit}")
             col2.metric("Harga Rencana", f"Rp {planned:,.0f}")
             col3.metric("Harga Pelaksanaan", f"Rp {exec_price:,.0f}")
 
             st.caption(f"**Total Pelaksanaan:** Rp {total_exec:,.0f}")
 
-            # Panggil recursive untuk child
-            show_rap_hierarchy(items, parent_id=item.get('id'), level=level + 1)
+            # Cari child berdasarkan parent_id (yang asli dari RAB)
+            children = get_children(item.get('rab_item_id'))
+            for child in children:
+                render_node(child, level + 1)
 
-# Tampilkan hierarchy
-if filtered:
-    show_rap_hierarchy(filtered)
-else:
-    st.warning("Tidak ada item yang cocok dengan pencarian.")
+    # Ambil root items (parent_id kosong / None)
+    root_items = [item for item in items if not item.get('parent_id')]
+    
+    for root in root_items:
+        render_node(root)
 
 # ==================== FORM EDIT HARGA ====================
 if "edit_rap_item" in st.session_state:
