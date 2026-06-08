@@ -56,7 +56,6 @@ with col2:
                     .select("*") \
                     .eq("project_id", project_id) \
                     .order("level") \
-                    .order("sort_order") \
                     .execute().data
 
                 if not rab_items:
@@ -193,7 +192,6 @@ try:
         .select("*") \
         .eq("project_id", project_id) \
         .order("level") \
-        .order("sort_order") \
         .execute().data
 except Exception as e:
     st.error(f"❌ Gagal mengambil data RAP dari database: {str(e)}")
