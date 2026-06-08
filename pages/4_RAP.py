@@ -13,15 +13,18 @@ from datetime import datetime
 
 supabase = get_supabase()
 
+# ==================== PROJECT & SESSION GUARD ====================
 project_id = st.session_state.get("current_project_id")
-project_name = st.session_state.get("selected_project_name", "Proyek")
+project_name = st.session_state.get("selected_project_name")
 
 st.header("📋 RAP - Rencana Anggaran Pelaksanaan")
-st.subheader(f"Proyek: {project_name}")
 
 if not project_id:
-    st.warning("Pilih proyek di sidebar")
+    st.warning("⚠️ Silakan pilih proyek terlebih dahulu di sidebar.")
+    st.info("Gunakan dropdown **📂 Pilih Proyek** di sidebar kiri untuk memilih proyek aktif.")
     st.stop()
+
+st.subheader(f"Proyek: {project_name}")
 
 st.divider()
 
@@ -169,19 +172,24 @@ with col2:
 
 st.divider()
 
-# ==================== DAFTAR ITEM RAP (MENGGUNAKAN KOMPONEN PUSAT) ====================
+# ==================== LOAD DATA RAP (DENGAN ERROR HANDLING) ====================
 st.subheader("📊 Daftar Item RAP")
 
-# Load data RAP
-rap_items = supabase.table("rap_items") \
-    .select("*") \
-    .eq("project_id", project_id) \
-    .order("level") \
-    .order("sort_order") \
-    .execute().data
+try:
+    rap_items = supabase.table("rap_items") \
+        .select("*") \
+        .eq("project_id", project_id) \
+        .order("level") \
+        .order("sort_order") \
+        .execute().data
+except Exception as e:
+    st.error(f"❌ Gagal mengambil data RAP dari database: {str(e)}")
+    st.info("Coba refresh halaman atau hubungi administrator.")
+    st.stop()
 
 if not rap_items:
-    st.info("Belum ada data RAP untuk proyek ini. Silakan klik tombol **Buat/Update RAP** di atas.")
+    st.info("Belum ada data RAP untuk proyek ini.")
+    st.markdown("Silakan klik tombol **🔄 Buat/Update RAP** di bagian atas untuk membuat data RAP dari RAB.")
     st.stop()
 
 # ==================== SEARCH ====================
