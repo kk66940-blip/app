@@ -72,8 +72,8 @@ with col2:
                 supabase.table("rap_items").delete().eq("project_id", project_id).execute()
                 st.write("✅ Data RAP lama berhasil dihapus.")
 
-                # === STEP 3: Insert dengan hierarchy yang benar (Level Order) ===
-                st.write("3️⃣ Menyalin data RAP (hierarchy mengikuti struktur RAB asli)...")
+                # === STEP 3: Salin data RAP (Hierarchy mengikuti RAB asli) ===
+                st.write("3️⃣ Menyalin data dari RAB ke RAP...")
                 
                 inserted_count = 0
                 
@@ -89,13 +89,13 @@ with col2:
                         "execution_price": round(item.get('unit_price', 0) * percentage / 100, 2),
                         "upah": 0,
                         "level": item.get('level', 0),
-                        "parent_id": item.get('parent_id')
+                        "parent_id": item.get('parent_id')   # Langsung pakai parent_id asli dari RAB
                     }
 
                     supabase.table("rap_items").insert(rap_data).execute()
                     inserted_count += 1
 
-                st.write(f"✅ Berhasil menyalin {inserted_count} item RAP dengan hierarchy yang sama.")
+                st.write(f"✅ Berhasil menyalin {inserted_count} item RAP.")
 
                 status.update(label="✅ RAP berhasil dibuat!", state="complete")
                 
@@ -310,3 +310,4 @@ with col4:
               delta_color=delta_color)
 
 st.caption(f"Update: {datetime.now().strftime('%d %B %Y %H:%M')}")
+
