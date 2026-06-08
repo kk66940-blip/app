@@ -49,9 +49,9 @@ with col2:
         
         try:
             with status:
+                # === STEP 1: Ambil data RAB (diurutkan berdasarkan level) ===
                 st.write("1️⃣ Mengambil data RAB...")
                 
-                # === STEP 1: Ambil data RAB DULU (sebelum hapus apapun) ===
                 rab_items = supabase.table("rab_items") \
                     .select("*") \
                     .eq("project_id", project_id) \
@@ -64,24 +64,30 @@ with col2:
                     st.info("Silakan buat data RAB terlebih dahulu di halaman RAB.")
                     st.stop()
 
-                st.write(f"✅ Ditemukan {len(rab_items)} item RAB.")
+                st.write(f"✅ Ditemukan {len(rab_items)} item RAB (termasuk multi-level).")
 
-                # === STEP 2: Hapus data RAP lama (setelah validasi) ===
+                # === STEP 2: Hapus data RAP lama ===
                 st.write("2️⃣ Menghapus data RAP lama...")
-                delete_result = supabase.table("rap_items") \
-                    .delete() \
-                    .eq("project_id", project_id) \
-                    .execute()
+                supabase.table("rap_items").delete().eq("project_id", project_id).execute()
                 st.write("✅ Data RAP lama berhasil dihapus.")
 
-                # === STEP 3: Insert data baru dengan mapping parent ===
-                st.write("3️⃣ Membuat data RAP baru...")
+                # === STEP 3: Insert dengan hierarchy yang benar (Level Order) ===
+                st.write("3️⃣ Membuat data RAP dengan hierarchy yang benar...")
                 
                 id_mapping = {}
                 inserted_count = 0
                 
-                # Tahap 1: Insert semua item dengan parent_id = None
-                for item in rab_items:
+                # Urutkan berdasarkan level agar parent selalu di-insert sebelum child
+                rab_items_sorted = sorted(rab_items, key=lambda x: x.get('level', 0))
+                
+                for item in rab_items_sorted:
+                    # Tentukan parent_id yang benar
+                    original_parent_id = item.get('parent_id')
+                    new_parent_id = None
+                    
+                    if original_parent_id and original_parent_id in id_mapping:
+                        new_parent_id = id_mapping[original_parent_id]
+                    
                     rap_data = {
                         "project_id": project_id,
                         "rab_item_id": item.get('id'),
@@ -93,7 +99,7 @@ with col2:
                         "execution_price": round(item.get('unit_price', 0) * percentage / 100, 2),
                         "upah": 0,
                         "level": item.get('level', 0),
-                        "parent_id": None
+                        "parent_id": new_parent_id
                     }
 
                     result = supabase.table("rap_items").insert(rap_data).execute()
@@ -101,36 +107,21 @@ with col2:
                     id_mapping[item['id']] = new_rap_id
                     inserted_count += 1
 
-                st.write(f"✅ Berhasil insert {inserted_count} item (tahap 1).")
-
-                # Tahap 2: Update parent_id
-                st.write("4️⃣ Memperbaiki hierarchy (parent-child)...")
-                updated_count = 0
-                
-                for item in rab_items:
-                    if item.get('parent_id') and item['parent_id'] in id_mapping:
-                        new_parent_id = id_mapping[item['parent_id']]
-                        supabase.table("rap_items") \
-                            .update({"parent_id": new_parent_id}) \
-                            .eq("id", id_mapping[item['id']]) \
-                            .execute()
-                        updated_count += 1
-
-                st.write(f"✅ Hierarchy berhasil diperbaiki untuk {updated_count} item.")
+                st.write(f"✅ Berhasil membuat {inserted_count} item RAP dengan hierarchy lengkap.")
 
                 status.update(label="✅ RAP berhasil dibuat!", state="complete")
                 
-                st.success(f"🎉 Berhasil membuat {inserted_count} item RAP dengan persentase {percentage}%!")
+                st.success(f"🎉 Berhasil membuat {inserted_count} item RAP!")
+                st.caption(f"Persentase yang digunakan: {percentage}%")
                 st.balloons()
                 st.rerun()
 
         except Exception as e:
             status.update(label="❌ Gagal membuat RAP", state="error")
-            st.error(f"❌ Terjadi kesalahan: {str(e)}")
-            st.info("Data RAP lama sudah dihapus. Silakan coba lagi atau hubungi developer.")
+            st.error(f"❌ Terjadi kesalahan saat membuat RAP: {str(e)}")
+            st.info("Silakan coba lagi. Jika masih error, hubungi developer.")
             
-            # Optional: tampilkan detail error untuk debugging
-            with st.expander("Detail Error (untuk developer)"):
+            with st.expander("Detail teknis (untuk developer)"):
                 import traceback
                 st.code(traceback.format_exc())
 st.divider()
