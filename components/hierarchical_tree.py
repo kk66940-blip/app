@@ -145,7 +145,7 @@ def display_rap_tree(
     expanded_by_default: bool = False,
 ) -> None:
     """
-    Specialized tree untuk RAP (lebih baik & konsisten).
+    Tree khusus untuk halaman RAP dengan fitur pencarian.
     """
     from utils.helpers import format_rupiah
 
@@ -188,10 +188,11 @@ def display_rap_tree(
                     st.session_state[f"{key_prefix}_delete_item"] = item
                     st.rerun()
 
+    # === Ini yang penting: meneruskan search_term ===
     display_hierarchical_tree(
         items=items,
         render_content=render_rap_content,
-        search_term=search_term,
+        search_term=search_term,           # <-- Harus ada ini
         key_prefix=key_prefix,
         expanded_by_default=expanded_by_default,
     )

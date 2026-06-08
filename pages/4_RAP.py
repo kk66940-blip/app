@@ -179,12 +179,11 @@ search_term = st.text_input(
     key="rap_search_input"
 ).strip()
 
-# Tampilkan Tree RAP
 display_rap_tree(
     items=rap_items,
     on_edit=lambda item: st.session_state.update({"edit_rap_item": item}),
     on_delete=lambda item: st.session_state.update({"delete_rap_item_id": item["id"]}),
-    search_term=search_term,
+    search_term=search_term,           # <-- Penting!
     key_prefix="rap",
     expanded_by_default=False
 )
