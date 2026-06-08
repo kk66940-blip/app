@@ -1,6 +1,6 @@
 """
 utils/export_utils.py
-Versi yang sudah diperbaiki untuk mendukung hierarchy RAP
+Versi lengkap + sudah diperbaiki untuk mendukung RAP hierarchy
 """
 
 from io import BytesIO
@@ -46,6 +46,124 @@ def _get_root_items(items: List[Dict], id_key: str = "id", parent_key: str = "pa
     return sorted(roots, key=lambda x: (x.get('sort_order', 0), x.get(id_key, 0)))
 
 
+# ==================== EXCEL EXPORT (LENGKAP) ====================
+def export_hierarchical_excel(
+    items: List[Dict],
+    project_name: str,
+    title: str = "RENCANA ANGGARAN PELAKSANAAN (RAP)",
+    filename_prefix: str = "RAP",
+    get_total_func: Optional[Callable[[Dict], float]] = None,
+    id_key: str = "id",
+    parent_key: str = "parent_id"
+) -> BytesIO:
+    if not items:
+        raise ValueError("No data to export")
+
+    children_map = _build_children_map(items, id_key=id_key, parent_key=parent_key)
+    root_items = _get_root_items(items, id_key=id_key, parent_key=parent_key)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = filename_prefix[:31]
+
+    ws.merge_cells('A1:F1')
+    ws['A1'] = f"{title} - {project_name}"
+    ws['A1'].font = Font(bold=True, size=14, color="0d6efd")
+    ws['A1'].alignment = Alignment(horizontal='center')
+
+    ws.merge_cells('A2:F2')
+    ws['A2'] = f"Tanggal Export: {datetime.now().strftime('%d %B %Y')}"
+    ws['A2'].font = Font(italic=True, size=10)
+
+    headers = ["No", "Uraian Pekerjaan", "Satuan", "Volume", "Harga Satuan (Rp)", "Jumlah (Rp)"]
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=4, column=col, value=header)
+        cell.font = HEADER_FONT
+        cell.fill = HEADER_FILL
+        cell.alignment = Alignment(horizontal='center')
+        cell.border = THIN_BORDER
+
+    row_num = 5
+    grand_total = 0
+
+    def process_node(node: Dict, path: List[int]) -> float:
+        nonlocal row_num, grand_total
+        node_id = node.get(id_key)
+        children = children_map.get(node_id, [])
+        has_children = len(children) > 0
+        current_no = ".".join(map(str, path))
+
+        if has_children:
+            ws.merge_cells(start_row=row_num, start_column=1, end_row=row_num, end_column=6)
+            cell = ws.cell(row=row_num, column=1, value=f"▶ {node.get('description', '')}")
+            cell.font = SECTION_FONT
+            cell.fill = SECTION_FILL
+            for c in range(1, 7):
+                ws.cell(row=row_num, column=c).border = THIN_BORDER
+                ws.cell(row=row_num, column=c).fill = SECTION_FILL
+            row_num += 1
+
+            sub_total = 0
+            for idx, child in enumerate(children, 1):
+                sub_total += process_node(child, path + [idx])
+            
+            ws.cell(row=row_num, column=2, value="SUBTOTAL").font = SUBTOTAL_FONT
+            ws.cell(row=row_num, column=6, value=sub_total).font = SUBTOTAL_FONT
+            ws.cell(row=row_num, column=6).number_format = '#,##0'
+            for c in range(1, 7):
+                ws.cell(row=row_num, column=c).border = THIN_BORDER
+                ws.cell(row=row_num, column=c).fill = SUBTOTAL_FILL
+            row_num += 1
+            return sub_total
+        else:
+            vol = node.get('volume', 0) or 0
+            price = node.get('unit_price', 0) or node.get('execution_price', 0) or 0
+            total = get_total_func(node) if get_total_func else (vol * price)
+            grand_total += total
+
+            ws.cell(row=row_num, column=1, value=current_no).border = THIN_BORDER
+            ws.cell(row=row_num, column=2, value=f"    {node.get('description', '')}").border = THIN_BORDER
+            ws.cell(row=row_num, column=3, value=node.get('unit', '')).border = THIN_BORDER
+            ws.cell(row=row_num, column=4, value=vol).border = THIN_BORDER
+            ws.cell(row=row_num, column=5, value=price).border = THIN_BORDER
+            ws.cell(row=row_num, column=6, value=total).border = THIN_BORDER
+
+            ws.cell(row=row_num, column=4).number_format = '#,##0.00'
+            ws.cell(row=row_num, column=5).number_format = '#,##0'
+            ws.cell(row=row_num, column=6).number_format = '#,##0'
+            row_num += 1
+            return total
+
+    for idx, root in enumerate(root_items, 1):
+        process_node(root, [idx])
+
+    # Grand Total
+    row_num += 1
+    ws.merge_cells(start_row=row_num, start_column=2, end_row=row_num, end_column=5)
+    ws.cell(row=row_num, column=2, value="GRAND TOTAL").font = GRAND_FONT
+    ws.cell(row=row_num, column=2).fill = GRAND_FILL
+    ws.cell(row=row_num, column=2).alignment = Alignment(horizontal='right')
+
+    ws.cell(row=row_num, column=6, value=grand_total).font = GRAND_FONT
+    ws.cell(row=row_num, column=6).fill = GRAND_FILL
+    ws.cell(row=row_num, column=6).number_format = '#,##0'
+    for c in range(2, 7):
+        ws.cell(row=row_num, column=c).border = THIN_BORDER
+        ws.cell(row=row_num, column=c).fill = GRAND_FILL
+
+    ws.column_dimensions['A'].width = 8
+    ws.column_dimensions['B'].width = 55
+    ws.column_dimensions['C'].width = 10
+    ws.column_dimensions['D'].width = 12
+    ws.column_dimensions['E'].width = 18
+    ws.column_dimensions['F'].width = 18
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
+
 # ==================== PDF EXPORT (DIPERBAIKI) ====================
 def export_hierarchical_pdf(
     items: List[Dict],
@@ -63,7 +181,8 @@ def export_hierarchical_pdf(
     root_items = _get_root_items(items, id_key=id_key, parent_key=parent_key)
 
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=1.2*cm, leftMargin=1.2*cm, topMargin=1.2*cm, bottomMargin=1.2*cm)
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=1.2*cm, leftMargin=1.2*cm,
+                            topMargin=1.2*cm, bottomMargin=1.2*cm)
 
     styles = getSampleStyleSheet()
     normal = ParagraphStyle('Normal', parent=styles['Normal'], fontSize=8, leading=10)
@@ -150,7 +269,6 @@ def export_hierarchical_pdf(
         style_commands.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor('#fff3cd')))
         style_commands.append(('FONTNAME', (0, row_idx), (-1, row_idx), 'Helvetica-Bold'))
 
-    # Grand Total row
     grand_row = len(table_data) - 1
     style_commands.append(('BACKGROUND', (0, grand_row), (-1, grand_row), colors.HexColor('#d4edda')))
     style_commands.append(('FONTNAME', (0, grand_row), (-1, grand_row), 'Helvetica-Bold'))
