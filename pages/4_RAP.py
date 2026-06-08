@@ -236,7 +236,6 @@ else:
     try:
         display_rap_tree(
             items=filtered_items,
-            on_edit_price=handle_edit_price,
             search_term=search_term,
             key_prefix="rap_main"
         )
