@@ -233,12 +233,19 @@ def handle_edit_price(item):
 if not filtered_items:
     st.info("Tidak ada item RAP yang ditampilkan.")
 else:
-    display_rap_tree(
-        items=filtered_items,
-        on_edit_price=handle_edit_price,
-        search_term=search_term,
-        key_prefix="rap_main"
-    )
+    try:
+        display_rap_tree(
+            items=filtered_items,
+            on_edit_price=handle_edit_price,
+            search_term=search_term,
+            key_prefix="rap_main"
+        )
+    except Exception as e:
+        st.error(f"❌ Terjadi kesalahan saat menampilkan daftar RAP: {str(e)}")
+        st.info("Coba refresh halaman atau hubungi developer.")
+        with st.expander("Detail Error (untuk developer)"):
+            import traceback
+            st.code(traceback.format_exc())
 
 # ==================== FORM EDIT HARGA (Global) ====================
 if "edit_rap_item" in st.session_state:
@@ -304,4 +311,3 @@ with col4:
               delta_color=delta_color)
 
 st.caption(f"Update: {datetime.now().strftime('%d %B %Y %H:%M')}")
-
