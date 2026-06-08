@@ -28,76 +28,112 @@ st.subheader(f"Proyek: {project_name}")
 
 st.divider()
 
-# ==================== BUAT RAP DARI RAB (VERSI FINAL - SUDAH DIPERBAIKI) ====================
-st.subheader("🔄 Buat RAP dari RAB")
+# ==================== BUAT RAP DARI RAB (VERSI AMAN & PROFESIONAL) ====================
+st.subheader("🔄 Buat / Update RAP dari RAB")
 
 col1, col2 = st.columns([1, 2])
 with col1:
     percentage = st.number_input(
-        "Persentase Harga dari RAB (%)",
-        min_value=50, max_value=150, value=85, step=1
+        "Persentase Harga Pelaksanaan dari RAB (%)",
+        min_value=50,
+        max_value=150,
+        value=85,
+        step=1,
+        help="Harga Pelaksanaan = Harga RAB × Persentase ini"
     )
 
 with col2:
-    if st.button("🔄 Buat/Update RAP", type="primary", use_container_width=True):
+    if st.button("🔄 Buat / Update RAP", type="primary", use_container_width=True):
+        
+        status = st.status("Memproses pembuatan RAP...", expanded=True)
+        
         try:
-            # 1. Hapus data RAP lama
-            supabase.table("rap_items").delete().eq("project_id", project_id).execute()
+            with status:
+                st.write("1️⃣ Mengambil data RAB...")
+                
+                # === STEP 1: Ambil data RAB DULU (sebelum hapus apapun) ===
+                rab_items = supabase.table("rab_items") \
+                    .select("*") \
+                    .eq("project_id", project_id) \
+                    .order("level") \
+                    .order("sort_order") \
+                    .execute().data
 
-            # 2. Ambil semua data RAB
-            rab_items = supabase.table("rab_items") \
-                .select("*") \
-                .eq("project_id", project_id) \
-                .order("level").order("sort_order") \
-                .execute().data
+                if not rab_items:
+                    st.error("❌ Tidak ada data RAB untuk proyek ini.")
+                    st.info("Silakan buat data RAB terlebih dahulu di halaman RAB.")
+                    st.stop()
 
-            if not rab_items:
-                st.warning("Tidak ada data RAB untuk proyek ini.")
-                st.stop()
+                st.write(f"✅ Ditemukan {len(rab_items)} item RAB.")
 
-            # 3. Mapping ID
-            id_mapping = {}
-            inserted_count = 0
+                # === STEP 2: Hapus data RAP lama (setelah validasi) ===
+                st.write("2️⃣ Menghapus data RAP lama...")
+                delete_result = supabase.table("rap_items") \
+                    .delete() \
+                    .eq("project_id", project_id) \
+                    .execute()
+                st.write("✅ Data RAP lama berhasil dihapus.")
 
-            # === TAHAP 1: Insert semua item (parent_id = None dulu) ===
-            for item in rab_items:
-                rap_data = {
-                    "project_id": project_id,
-                    "rab_item_id": item['id'],
-                    "code": item.get('code', ''),
-                    "description": item.get('description', ''),
-                    "unit": item.get('unit', ''),
-                    "volume": item.get('volume', 0),
-                    "planned_price": item.get('unit_price', 0),
-                    "execution_price": round(item.get('unit_price', 0) * percentage / 100, 2),
-                    "upah": 0,
-                    "level": item.get('level', 0),
-                    "parent_id": None
-                    # sort_order dihapus karena tidak ada di tabel rap_items
-                }
+                # === STEP 3: Insert data baru dengan mapping parent ===
+                st.write("3️⃣ Membuat data RAP baru...")
+                
+                id_mapping = {}
+                inserted_count = 0
+                
+                # Tahap 1: Insert semua item dengan parent_id = None
+                for item in rab_items:
+                    rap_data = {
+                        "project_id": project_id,
+                        "rab_item_id": item.get('id'),
+                        "code": item.get('code', ''),
+                        "description": item.get('description', ''),
+                        "unit": item.get('unit', ''),
+                        "volume": item.get('volume', 0),
+                        "planned_price": item.get('unit_price', 0),
+                        "execution_price": round(item.get('unit_price', 0) * percentage / 100, 2),
+                        "upah": 0,
+                        "level": item.get('level', 0),
+                        "parent_id": None,
+                        "sort_order": item.get('sort_order', 0)  # Simpan sort_order jika ada
+                    }
 
-                result = supabase.table("rap_items").insert(rap_data).execute()
-                new_rap_id = result.data[0]['id']
-                id_mapping[item['id']] = new_rap_id
-                inserted_count += 1
+                    result = supabase.table("rap_items").insert(rap_data).execute()
+                    new_rap_id = result.data[0]['id']
+                    id_mapping[item['id']] = new_rap_id
+                    inserted_count += 1
 
-            # === TAHAP 2: Update parent_id ===
-            for item in rab_items:
-                if item.get('parent_id') and item['parent_id'] in id_mapping:
-                    new_parent_id = id_mapping[item['parent_id']]
-                    supabase.table("rap_items") \
-                        .update({"parent_id": new_parent_id}) \
-                        .eq("id", id_mapping[item['id']]) \
-                        .execute()
+                st.write(f"✅ Berhasil insert {inserted_count} item (tahap 1).")
 
-            st.success(f"✅ Berhasil membuat {inserted_count} item RAP dengan hierarchy yang benar!")
-            st.balloons()
-            st.rerun()
+                # Tahap 2: Update parent_id
+                st.write("4️⃣ Memperbaiki hierarchy (parent-child)...")
+                updated_count = 0
+                
+                for item in rab_items:
+                    if item.get('parent_id') and item['parent_id'] in id_mapping:
+                        new_parent_id = id_mapping[item['parent_id']]
+                        supabase.table("rap_items") \
+                            .update({"parent_id": new_parent_id}) \
+                            .eq("id", id_mapping[item['id']]) \
+                            .execute()
+                        updated_count += 1
+
+                st.write(f"✅ Hierarchy berhasil diperbaiki untuk {updated_count} item.")
+
+                status.update(label="✅ RAP berhasil dibuat!", state="complete")
+                
+                st.success(f"🎉 Berhasil membuat {inserted_count} item RAP dengan persentase {percentage}%!")
+                st.balloons()
+                st.rerun()
 
         except Exception as e:
-            st.error(f"❌ Gagal membuat RAP: {str(e)}")
-            import traceback
-            st.text(traceback.format_exc())
+            status.update(label="❌ Gagal membuat RAP", state="error")
+            st.error(f"❌ Terjadi kesalahan: {str(e)}")
+            st.info("Data RAP lama sudah dihapus. Silakan coba lagi atau hubungi developer.")
+            
+            # Optional: tampilkan detail error untuk debugging
+            with st.expander("Detail Error (untuk developer)"):
+                import traceback
+                st.code(traceback.format_exc())
 st.divider()
 
 # ==================== EXPORT RAP (Menggunakan Centralized Utils) ====================
