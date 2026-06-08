@@ -72,22 +72,11 @@ with col2:
                 st.write("✅ Data RAP lama berhasil dihapus.")
 
                 # === STEP 3: Insert dengan hierarchy yang benar (Level Order) ===
-                st.write("3️⃣ Membuat data RAP dengan hierarchy yang benar...")
+                st.write("3️⃣ Menyalin data RAP (hierarchy mengikuti struktur RAB asli)...")
                 
-                id_mapping = {}
                 inserted_count = 0
                 
-                # Urutkan berdasarkan level agar parent selalu di-insert sebelum child
-                rab_items_sorted = sorted(rab_items, key=lambda x: x.get('level', 0))
-                
-                for item in rab_items_sorted:
-                    # Tentukan parent_id yang benar
-                    original_parent_id = item.get('parent_id')
-                    new_parent_id = None
-                    
-                    if original_parent_id and original_parent_id in id_mapping:
-                        new_parent_id = id_mapping[original_parent_id]
-                    
+                for item in rab_items:
                     rap_data = {
                         "project_id": project_id,
                         "rab_item_id": item.get('id'),
@@ -99,15 +88,13 @@ with col2:
                         "execution_price": round(item.get('unit_price', 0) * percentage / 100, 2),
                         "upah": 0,
                         "level": item.get('level', 0),
-                        "parent_id": new_parent_id
+                        "parent_id": item.get('parent_id')
                     }
 
-                    result = supabase.table("rap_items").insert(rap_data).execute()
-                    new_rap_id = result.data[0]['id']
-                    id_mapping[item['id']] = new_rap_id
+                    supabase.table("rap_items").insert(rap_data).execute()
                     inserted_count += 1
 
-                st.write(f"✅ Berhasil membuat {inserted_count} item RAP dengan hierarchy lengkap.")
+                st.write(f"✅ Berhasil menyalin {inserted_count} item RAP dengan hierarchy yang sama.")
 
                 status.update(label="✅ RAP berhasil dibuat!", state="complete")
                 
