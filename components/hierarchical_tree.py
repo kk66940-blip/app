@@ -6,6 +6,14 @@ Reusable hierarchical tree component for RAB, RAP, Opname, etc.
 import streamlit as st
 from collections import defaultdict
 from typing import List, Dict, Any, Callable, Optional
+"""
+components/hierarchical_tree.py
+Reusable hierarchical tree component for RAB, RAP, Opname, etc.
+"""
+
+import streamlit as st
+from collections import defaultdict
+from typing import List, Dict, Any, Callable, Optional
 
 def display_rap_tree(
     items: List[Dict],
