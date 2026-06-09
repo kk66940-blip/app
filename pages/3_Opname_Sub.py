@@ -327,7 +327,7 @@ if current_period_id:
                 st.write(f"**Volume Opname:** {volume_actual:,.2f} {item.get('unit','')}")
                 st.write(f"**Nilai Opname:** {format_rupiah(nilai_opname)}")
 
-# ==================== EDIT STABIL (GANTI YANG LAMA) ====================
+# ==================== EDIT SEDERHANA - OPNAME SUB ====================
 if st.session_state.get("edit_opname_item"):
     item = st.session_state.edit_opname_item
     rab_id = item['id']
@@ -338,13 +338,13 @@ if st.session_state.get("edit_opname_item"):
 
     st.subheader(f"✏️ Edit Item: {item.get('code', '')}")
 
-    with st.form("edit_form_final"):
+    with st.form("edit_opname_sub"):
         new_volume = st.number_input("Volume Opname", value=float(current_volume), step=0.01)
         new_kasbon = st.number_input("Kasbonan (Rp)", value=float(current_kasbon), step=50000.0)
 
         col1, col2 = st.columns(2)
         with col1:
-            if st.form_submit_button("💾 Simpan Perubahan", type="primary"):
+            if st.form_submit_button("💾 Simpan", type="primary"):
                 if detail:
                     supabase.table("opname_sub_details").update({
                         "volume_actual": new_volume,
@@ -366,16 +366,17 @@ if st.session_state.get("edit_opname_item"):
                 st.session_state.edit_opname_item = None
                 st.rerun()
 
-# Tombol Edit di dalam expander
+# ==================== TOMBOL EDIT DI ITEM ====================
 st.divider()
 st.subheader("✏️ Edit Data per Item")
 
 for item in rab_items:
     if item['id'] in opname_map:
         detail = opname_map[item['id']]
-        with st.expander(f"{item.get('code','')} - {item.get('description','')[:45]}"):
+        with st.expander(f"{item.get('code','')} - {item.get('description','')[:50]}"):
             st.write(f"Volume: {detail.get('volume_actual', 0)} | Kasbon: {format_rupiah(detail.get('kasbon_amount', 0))}")
-            if st.button("✏️ Edit", key=f"edit_{item['id']}"):
+            
+            if st.button("✏️ Edit Item Ini", key=f"edit_btn_{item['id']}"):
                 st.session_state.edit_opname_item = item
                 st.rerun()
 
