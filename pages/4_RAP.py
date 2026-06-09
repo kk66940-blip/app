@@ -209,22 +209,44 @@ def render_rap_advanced(item: Dict[str, Any]):
             st.session_state.delete_confirm_id = item["id"]
             st.rerun()
 
-# ==================== RENDER TREE ====================
-children_map = build_tree(filtered_items)
+# ==================== RENDER TREE (FIXED untuk RAP) ====================
+# Karena di tabel rap_items, parent_id mengacu ke rab_item_id (bukan id RAP baru)
+def build_rap_children_map(items: List[Dict]) -> Dict:
+    from collections import defaultdict
+    children_map = defaultdict(list)
+    for item in items:
+        parent = item.get("parent_id")
+        children_map[parent].append(item)
+    
+    # Sort children
+    for pid in children_map:
+        children_map[pid] = sorted(
+            children_map[pid], 
+            key=lambda x: (x.get("sort_order", 0), x.get("id", 0))
+        )
+    return children_map
 
-def render_tree(parent_id: Optional[int] = None, level: int = 0):
-    children = children_map.get(parent_id, [])
+children_map = build_rap_children_map(filtered_items)
+
+def get_rap_children(parent_rab_id):
+    return children_map.get(parent_rab_id, [])
+
+def render_tree(parent_rab_id: Optional[int] = None, level: int = 0):
+    children = get_rap_children(parent_rab_id)
     for item in children:
         with st.expander(f"{'　' * level * 2}▶ {item.get('code', '')} - {item.get('description', '')}", expanded=(level <= 1)):
             render_rap_advanced(item)
-            render_tree(item.get("id"), level + 1)   # Note: pakai id asli, bukan rab_item_id
+            # Penting: pakai rab_item_id untuk mencari child berikutnya
+            render_tree(item.get("rab_item_id"), level + 1)
 
-# Root items
-root_items = [item for item in filtered_items if not item.get("parent_id")]
+# Root items: parent_id is None atau tidak ada di daftar rab_item_id
+all_rab_ids = {item.get("rab_item_id") for item in filtered_items if item.get("rab_item_id")}
+root_items = [item for item in filtered_items if item.get("parent_id") is None or item.get("parent_id") not in all_rab_ids]
+
 for root in root_items:
     with st.expander(f"▶ {root.get('code', '')} - {root.get('description', '')}", expanded=True):
         render_rap_advanced(root)
-        render_tree(root.get("id"), level=1)
+        render_tree(root.get("rab_item_id"), level=1)
 
 # ==================== SUMMARY ====================
 if filtered_items:
