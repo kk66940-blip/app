@@ -279,4 +279,47 @@ def export_hierarchical_pdf(
 
     doc.build(elements)
     buffer.seek(0)
+    
+    # ==================== CONVENIENCE WRAPPERS (UNTUK KOMPATIBILITAS) ====================
+
+def export_rab_excel(items: List[Dict], project_name: str) -> BytesIO:
+    """Wrapper khusus untuk halaman RAB"""
+    return export_hierarchical_excel(
+        items=items,
+        project_name=project_name,
+        title="RENCANA ANGGARAN BIAYA (RAB)",
+        filename_prefix="RAB"
+    )
+
+def export_rab_pdf(items: List[Dict], project_name: str) -> BytesIO:
+    """Wrapper khusus untuk halaman RAB"""
+    return export_hierarchical_pdf(
+        items=items,
+        project_name=project_name,
+        title="RENCANA ANGGARAN BIAYA (RAB)",
+        filename_prefix="RAB"
+    )
+
+def export_rap_excel(items: List[Dict], project_name: str) -> BytesIO:
+    """Wrapper khusus untuk halaman RAP"""
+    return export_hierarchical_excel(
+        items=items,
+        project_name=project_name,
+        title="RENCANA ANGGARAN PELAKSANAAN (RAP)",
+        filename_prefix="RAP",
+        id_key="rab_item_id",
+        parent_key="parent_id"
+    )
+
+def export_rap_pdf(items: List[Dict], project_name: str) -> BytesIO:
+    """Wrapper khusus untuk halaman RAP"""
+    return export_hierarchical_pdf(
+        items=items,
+        project_name=project_name,
+        title="RENCANA ANGGARAN PELAKSANAAN (RAP)",
+        filename_prefix="RAP",
+        id_key="rab_item_id",
+        parent_key="parent_id"
+    )
+    
     return buffer
