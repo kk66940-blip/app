@@ -206,6 +206,33 @@ else:
     else:
         st.info("Belum ada data RAB.")
 
+# ==================== DELETE CONFIRMATION ====================
+if st.session_state.get("delete_item"):
+    item_to_delete = st.session_state.delete_item
+    st.warning(f"⚠️ **Yakin ingin menghapus item ini?**")
+    st.write(f"**{item_to_delete.get('code', '')} - {item_to_delete.get('description', '')}**")
+    st.caption("Perhatian: Menghapus item RAB dapat mempengaruhi data RAP dan Opname yang terkait.")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("✅ Ya, Hapus Permanen", type="primary", use_container_width=True):
+            try:
+                # Hapus item
+                supabase.table("rab_items").delete().eq("id", item_to_delete["id"]).execute()
+                
+                # Opsional: hapus data terkait di RAP & Opname (bisa di-comment jika tidak mau)
+                # supabase.table("rap_items").delete().eq("rab_item_id", item_to_delete["id"]).execute()
+                
+                del st.session_state.delete_item
+                st.success("✅ Item RAB berhasil dihapus.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Gagal menghapus: {str(e)}")
+    with col2:
+        if st.button("❌ Batal", use_container_width=True):
+            del st.session_state.delete_item
+            st.rerun()
+
 # ==================== EDIT FORM ====================
 if "edit_item" in st.session_state:
     item = st.session_state.edit_item
