@@ -66,6 +66,9 @@ with st.expander("🔄 Generate / Update RAP dari RAB", expanded=False):
                     count = 0
                     for item in rab_items:
                         unit_price = item.get("unit_price") or 0
+                        # Coba ambil upah dari RAB jika ada
+                        rab_upah = item.get("upah") or item.get("labor_cost") or 0
+                        
                         rap_data = {
                             "project_id": project_id,
                             "rab_item_id": item.get("id"),
@@ -75,7 +78,7 @@ with st.expander("🔄 Generate / Update RAP dari RAB", expanded=False):
                             "volume": item.get("volume", 0),
                             "planned_price": unit_price,
                             "execution_price": round(unit_price * percentage / 100, 2),
-                            "upah": 0,
+                            "upah": rab_upah,           # ← Sekarang mengambil dari RAB
                             "level": item.get("level", 0),
                             "parent_id": item.get("parent_id"),
                         }
@@ -132,18 +135,33 @@ filtered_items = [
        search_term in str(item.get("code", "")).lower()
 ] if search_term else rap_items
 
-# ==================== EDIT FORM ====================
+# ==================== EDIT FORM (Harga + Upah) ====================
 if st.session_state.get("edit_rap_item"):
     item = st.session_state.edit_rap_item
     with st.form("edit_form"):
         st.write(f"**Edit:** {item.get('code', '')} - {item.get('description', '')}")
-        new_price = st.number_input("Harga Pelaksanaan Baru", value=float(item.get("execution_price", 0)), step=1000.0)
+        
+        new_execution_price = st.number_input(
+            "Harga Pelaksanaan Baru (Rp)", 
+            value=float(item.get("execution_price", 0)), 
+            step=1000.0
+        )
+        new_upah = st.number_input(
+            "Upah Baru (Rp)", 
+            value=float(item.get("upah", 0)), 
+            step=1000.0,
+            help="Upah tenaga kerja per satuan"
+        )
+        
         col1, col2 = st.columns(2)
         with col1:
-            if st.form_submit_button("💾 Simpan", type="primary"):
-                supabase.table("rap_items").update({"execution_price": new_price}).eq("id", item["id"]).execute()
+            if st.form_submit_button("💾 Simpan Perubahan", type="primary"):
+                supabase.table("rap_items").update({
+                    "execution_price": new_execution_price,
+                    "upah": new_upah
+                }).eq("id", item["id"]).execute()
                 del st.session_state.edit_rap_item
-                st.success("Berhasil diupdate!")
+                st.success("Harga & Upah berhasil diperbarui!")
                 st.rerun()
         with col2:
             if st.form_submit_button("Batal"):
@@ -176,6 +194,7 @@ def render_rap_advanced(item: Dict[str, Any]):
 
     total_rencana = vol * planned
     total_pelaksanaan = vol * exec_price
+    total_upah = vol * upah
     selisih = total_pelaksanaan - total_rencana
     persen_selisih = (selisih / total_rencana * 100) if total_rencana > 0 else 0
 
@@ -191,17 +210,18 @@ def render_rap_advanced(item: Dict[str, Any]):
     c3.metric("Harga Pelaksanaan", format_rupiah(exec_price))
     c4.metric("Selisih", format_rupiah(selisih), delta=f"{persen_selisih:+.1f}%")
 
-    # Totals + Comparison
+    # Upah & Totals
     st.caption(
         f"**Total Rencana:** {format_rupiah(total_rencana)} &nbsp;&nbsp;|&nbsp;&nbsp; "
         f"**Total Pelaksanaan:** {format_rupiah(total_pelaksanaan)} &nbsp;&nbsp;|&nbsp;&nbsp; "
-        f"**Selisih Total:** {format_rupiah(selisih)} ({persen_selisih:+.1f}%)"
+        f"**Total Upah:** {format_rupiah(total_upah)} &nbsp;&nbsp;|&nbsp;&nbsp; "
+        f"**Selisih:** {format_rupiah(selisih)} ({persen_selisih:+.1f}%)"
     )
 
     # Action Buttons
     col_edit, col_del = st.columns(2)
     with col_edit:
-        if st.button("✏️ Edit Harga", key=f"edit_{item['id']}", use_container_width=True):
+        if st.button("✏️ Edit Harga & Upah", key=f"edit_{item['id']}", use_container_width=True):
             st.session_state.edit_rap_item = item
             st.rerun()
     with col_del:
@@ -256,12 +276,14 @@ if filtered_items:
     total_vol = sum((i.get("volume", 0) or 0) for i in filtered_items)
     total_rencana = sum((i.get("volume", 0) or 0) * (i.get("planned_price", 0) or 0) for i in filtered_items)
     total_pelaksanaan = sum((i.get("volume", 0) or 0) * (i.get("execution_price", 0) or 0) for i in filtered_items)
+    total_upah = sum((i.get("volume", 0) or 0) * (i.get("upah", 0) or 0) for i in filtered_items)
     total_selisih = total_pelaksanaan - total_rencana
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Total Volume", f"{total_vol:,.2f}")
     c2.metric("Total Rencana", format_rupiah(total_rencana))
     c3.metric("Total Pelaksanaan", format_rupiah(total_pelaksanaan))
-    c4.metric("Total Selisih", format_rupiah(total_selisih), delta=f"{(total_selisih/total_rencana*100):+.1f}%" if total_rencana > 0 else None)
+    c4.metric("Total Upah", format_rupiah(total_upah))
+    c5.metric("Total Selisih", format_rupiah(total_selisih), delta=f"{(total_selisih/total_rencana*100):+.1f}%" if total_rencana > 0 else None)
 
 st.caption("Versi Advanced — dengan perbandingan per item & fitur hapus lengkap")
