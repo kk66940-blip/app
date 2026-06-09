@@ -166,3 +166,48 @@ def display_rap_tree(
         search_term=search_term,
         key_prefix=key_prefix
     )
+    
+# ==================== OPNAME TREE (BARU) ====================
+def display_opname_tree(
+    items: List[Dict],
+    on_edit: Optional[Callable[[Dict], None]] = None,
+    on_delete: Optional[Callable[[Dict], None]] = None,
+    search_term: str = "",
+    key_prefix: str = "opname"
+) -> None:
+    """Specialized tree for Opname pages."""
+    
+    def render_opname_content(item: Dict):
+        from utils.helpers import format_rupiah
+        
+        vol = item.get('volume', 0) or 0
+        volume_opname = item.get('volume_opname', 0) or 0
+        persentase = item.get('persentase', 0) or 0
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Volume RAB", f"{vol:,.2f} {item.get('unit', '')}")
+        col2.metric("Volume Opname", f"{volume_opname:,.2f}")
+        col3.metric("Persentase", f"{persentase:.1f}%")
+
+        # Placeholder untuk aksi (bisa dikembangkan nanti)
+        col_edit, col_del = st.columns(2)
+        with col_edit:
+            if st.button("✏️ Edit Opname", key=f"{key_prefix}_edit_{item['id']}", use_container_width=True):
+                if on_edit:
+                    on_edit(item)
+                else:
+                    st.session_state[f"{key_prefix}_edit_item"] = item
+                    st.rerun()
+        with col_del:
+            if st.button("🗑️ Hapus", key=f"{key_prefix}_del_{item['id']}", use_container_width=True):
+                if on_delete:
+                    on_delete(item)
+                else:
+                    st.warning("Fitur hapus Opname belum diaktifkan")
+
+    display_hierarchical_tree(
+        items=items,
+        render_content=render_opname_content,
+        search_term=search_term,
+        key_prefix=key_prefix
+    )
