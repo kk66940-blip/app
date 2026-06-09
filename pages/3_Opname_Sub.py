@@ -288,6 +288,79 @@ display_opname_tree(
 
 st.divider()
 
+# ==================== FITUR EDIT STABIL + KASBON ====================
+
+# Inisialisasi session state
+if "edit_opname_item" not in st.session_state:
+    st.session_state.edit_opname_item = None
+
+def handle_edit(item):
+    st.session_state.edit_opname_item = item
+    st.rerun()
+
+# ==================== FORM EDIT ====================
+if st.session_state.edit_opname_item:
+    item = st.session_state.edit_opname_item
+    rab_id = item['id']
+    detail = opname_map.get(rab_id, {})
+
+    current_volume = detail.get("volume_actual", 0) or 0
+    current_kasbon = detail.get("kasbon_amount", 0) or 0
+
+    st.subheader(f"✏️ Edit Item: {item.get('code', '')}")
+
+    with st.form("edit_form"):
+        new_volume = st.number_input("Volume Opname", value=float(current_volume), step=0.01)
+        new_kasbon = st.number_input("Kasbonan (Rp)", value=float(current_kasbon), step=50000.0)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.form_submit_button("💾 Simpan Perubahan", type="primary"):
+                if detail:
+                    supabase.table("opname_sub_details").update({
+                        "volume_actual": new_volume,
+                        "kasbon_amount": new_kasbon
+                    }).eq("id", detail["id"]).execute()
+                else:
+                    supabase.table("opname_sub_details").insert({
+                        "period_id": current_period_id,
+                        "rab_item_id": rab_id,
+                        "volume_actual": new_volume,
+                        "kasbon_amount": new_kasbon
+                    }).execute()
+
+                st.session_state.edit_opname_item = None
+                st.success("Data berhasil diperbarui!")
+                st.rerun()
+        with col2:
+            if st.form_submit_button("Batal"):
+                st.session_state.edit_opname_item = None
+                st.rerun()
+
+# ==================== DAFTAR ITEM YANG BISA DIEDIT ====================
+st.divider()
+st.subheader("✏️ Edit Data Opname & Kasbon")
+
+items_to_edit = [item for item in rab_items if item['id'] in opname_map]
+
+if items_to_edit:
+    for item in items_to_edit:
+        rab_id = item['id']
+        detail = opname_map.get(rab_id, {})
+        vol = detail.get("volume_actual", 0) or 0
+        kas = detail.get("kasbon_amount", 0) or 0
+
+        with st.expander(f"{item.get('code','')} - {item.get('description','')[:50]}"):
+            st.write(f"**Volume Saat Ini:** {vol}")
+            st.write(f"**Kasbon Saat Ini:** {format_rupiah(kas)}")
+
+            if st.button("✏️ Edit Item Ini", key=f"edit_{rab_id}"):
+                handle_edit(item)
+else:
+    st.info("Belum ada data Opname di periode ini.")
+
+st.caption("Versi Stabil - Edit menggunakan session_state")
+
 # ==================== RINGKASAN ====================
 total_nilai = sum(
     (actual_map.get(item['id'], 0) * rap_price_map.get(item['id'], 0))
