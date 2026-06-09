@@ -234,7 +234,7 @@ def get_rap_children(parent_rab_id):
 def render_tree(parent_rab_id: Optional[int] = None, level: int = 0):
     children = get_rap_children(parent_rab_id)
     for item in children:
-        with st.expander(f"{'　' * level * 2}▶ {item.get('code', '')} - {item.get('description', '')}", expanded=(level <= 1)):
+        with st.expander(f"{'　' * level * 2}▶ {item.get('code', '')} - {item.get('description', '')}", expanded=False):
             render_rap_advanced(item)
             # Penting: pakai rab_item_id untuk mencari child berikutnya
             render_tree(item.get("rab_item_id"), level + 1)
@@ -244,7 +244,7 @@ all_rab_ids = {item.get("rab_item_id") for item in filtered_items if item.get("r
 root_items = [item for item in filtered_items if item.get("parent_id") is None or item.get("parent_id") not in all_rab_ids]
 
 for root in root_items:
-    with st.expander(f"▶ {root.get('code', '')} - {root.get('description', '')}", expanded=True):
+    with st.expander(f"▶ {root.get('code', '')} - {root.get('description', '')}", expanded=False):
         render_rap_advanced(root)
         render_tree(root.get("rab_item_id"), level=1)
 
