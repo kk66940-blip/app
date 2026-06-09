@@ -327,22 +327,57 @@ if current_period_id:
                 st.write(f"**Volume Opname:** {volume_actual:,.2f} {item.get('unit','')}")
                 st.write(f"**Nilai Opname:** {format_rupiah(nilai_opname)}")
 
-                # Edit form
-                with st.form(key=f"edit_form_{rab_id}"):
-                    new_volume = st.number_input(
-                        "Volume Opname Baru", 
-                        min_value=0.0, 
-                        value=float(volume_actual), 
-                        step=0.01,
-                        key=f"vol_{rab_id}"
-                    )
-                    new_kasbon = st.number_input(
-                        "Kasbonan (Rp)", 
-                        min_value=0.0, 
-                        value=float(current_kasbon), 
-                        step=50000.0,
-                        key=f"kasbon_{rab_id}"
-                    )
+# ==================== EDIT STABIL (GANTI YANG LAMA) ====================
+if st.session_state.get("edit_opname_item"):
+    item = st.session_state.edit_opname_item
+    rab_id = item['id']
+    detail = opname_map.get(rab_id, {})
+
+    current_volume = detail.get("volume_actual", 0) or 0
+    current_kasbon = detail.get("kasbon_amount", 0) or 0
+
+    st.subheader(f"✏️ Edit Item: {item.get('code', '')}")
+
+    with st.form("edit_form_final"):
+        new_volume = st.number_input("Volume Opname", value=float(current_volume), step=0.01)
+        new_kasbon = st.number_input("Kasbonan (Rp)", value=float(current_kasbon), step=50000.0)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.form_submit_button("💾 Simpan Perubahan", type="primary"):
+                if detail:
+                    supabase.table("opname_sub_details").update({
+                        "volume_actual": new_volume,
+                        "kasbon_amount": new_kasbon
+                    }).eq("id", detail["id"]).execute()
+                else:
+                    supabase.table("opname_sub_details").insert({
+                        "period_id": current_period_id,
+                        "rab_item_id": rab_id,
+                        "volume_actual": new_volume,
+                        "kasbon_amount": new_kasbon
+                    }).execute()
+
+                st.session_state.edit_opname_item = None
+                st.success("Berhasil disimpan!")
+                st.rerun()
+        with col2:
+            if st.form_submit_button("Batal"):
+                st.session_state.edit_opname_item = None
+                st.rerun()
+
+# Tombol Edit di dalam expander
+st.divider()
+st.subheader("✏️ Edit Data per Item")
+
+for item in rab_items:
+    if item['id'] in opname_map:
+        detail = opname_map[item['id']]
+        with st.expander(f"{item.get('code','')} - {item.get('description','')[:45]}"):
+            st.write(f"Volume: {detail.get('volume_actual', 0)} | Kasbon: {format_rupiah(detail.get('kasbon_amount', 0))}")
+            if st.button("✏️ Edit", key=f"edit_{item['id']}"):
+                st.session_state.edit_opname_item = item
+                st.rerun()
 
                     submitted = st.form_submit_button("💾 Simpan Perubahan", type="primary")
 
