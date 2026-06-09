@@ -292,3 +292,50 @@ display_opname_tree(
 
 # Tampilkan foto yang sudah ada (opsional, jika ingin ditampilkan di luar komponen)
 # Bisa dikembangkan lebih lanjut jika diperlukan preview foto global.
+
+# ==================== FITUR EDIT VOLUME (Opname Utama) ====================
+st.divider()
+st.subheader("✏️ Edit Volume Opname per Item")
+
+if current_period_id:
+    opname_details = supabase.table("opname_details") \
+        .select("*") \
+        .eq("period_id", current_period_id).execute().data
+    opname_map = {d['rab_item_id']: d for d in opname_details}
+
+    items_with_data = [item for item in rab_items if opname_map.get(item['id'])]
+
+    if items_with_data:
+        for item in items_with_data:
+            rab_id = item['id']
+            detail = opname_map.get(rab_id, {})
+            current_volume = detail.get("actual_volume", 0) or 0
+
+            with st.expander(f"{item.get('code','')} - {item.get('description','')[:55]}", expanded=False):
+                st.write(f"**Volume Saat Ini:** {current_volume:,.2f} {item.get('unit','')}")
+
+                with st.form(key=f"edit_opname_{rab_id}"):
+                    new_volume = st.number_input(
+                        "Volume Opname Baru", 
+                        min_value=0.0, 
+                        value=float(current_volume), 
+                        step=0.01,
+                        key=f"vol_edit_{rab_id}"
+                    )
+
+                    if st.form_submit_button("💾 Simpan Perubahan Volume", type="primary"):
+                        if detail:
+                            supabase.table("opname_details").update({
+                                "actual_volume": new_volume
+                            }).eq("id", detail["id"]).execute()
+                        else:
+                            supabase.table("opname_details").insert({
+                                "period_id": current_period_id,
+                                "rab_item_id": rab_id,
+                                "actual_volume": new_volume
+                            }).execute()
+                        
+                        st.success("Volume berhasil diperbarui!")
+                        st.rerun()
+    else:
+        st.info("Belum ada data Opname di periode ini.")
