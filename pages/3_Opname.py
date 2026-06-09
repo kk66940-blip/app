@@ -303,7 +303,7 @@ if current_period_id:
         .eq("period_id", current_period_id).execute().data
     opname_map = {d['rab_item_id']: d for d in opname_details}
 
-    items_with_data = [item for item in rab_items if opname_map.get(item['id'])]
+    items_with_data = [item for item in rab_items if item['id'] in opname_map]
 
     if items_with_data:
         for item in items_with_data:
