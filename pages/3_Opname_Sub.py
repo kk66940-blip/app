@@ -356,6 +356,64 @@ if st.session_state.edit_opname_item:
             if st.form_submit_button("Batal"):
                 st.session_state.edit_opname_item = None
                 st.rerun()
+                
+# ==================== EDIT FITUR (VERSI PALING STABIL) ====================
+
+# Inisialisasi session state
+if "edit_item_id" not in st.session_state:
+    st.session_state.edit_item_id = None
+
+# ==================== FORM EDIT (LETakkan di bagian ATAS) ====================
+if st.session_state.edit_item_id is not None:
+    edit_id = st.session_state.edit_item_id
+    detail = opname_map.get(edit_id, {})
+
+    current_volume = detail.get("volume_actual", 0) or 0
+    current_kasbon = detail.get("kasbon_amount", 0) or 0
+
+    st.subheader("✏️ Edit Data Opname & Kasbon")
+
+    with st.form("edit_form_stable"):
+        new_volume = st.number_input("Volume Opname", value=float(current_volume), step=0.01)
+        new_kasbon = st.number_input("Kasbonan (Rp)", value=float(current_kasbon), step=50000.0)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.form_submit_button("💾 Simpan Perubahan", type="primary"):
+                if detail:
+                    supabase.table("opname_sub_details").update({
+                        "volume_actual": new_volume,
+                        "kasbon_amount": new_kasbon
+                    }).eq("id", detail["id"]).execute()
+                else:
+                    supabase.table("opname_sub_details").insert({
+                        "period_id": current_period_id,
+                        "rab_item_id": edit_id,
+                        "volume_actual": new_volume,
+                        "kasbon_amount": new_kasbon
+                    }).execute()
+
+                st.session_state.edit_item_id = None
+                st.success("Berhasil disimpan!")
+                st.rerun()
+        with col2:
+            if st.form_submit_button("Batal"):
+                st.session_state.edit_item_id = None
+                st.rerun()
+
+# ==================== DAFTAR ITEM + TOMBOL EDIT ====================
+st.divider()
+st.subheader("✏️ Edit per Item")
+
+for item in rab_items:
+    if item['id'] in opname_map:
+        detail = opname_map.get(item['id'], {})
+        with st.expander(f"{item.get('code','')} - {item.get('description','')[:45]}"):
+            st.write(f"Volume: {detail.get('volume_actual', 0)} | Kasbon: {format_rupiah(detail.get('kasbon_amount', 0))}")
+            
+            if st.button("✏️ Edit Item Ini", key=f"btn_edit_{item['id']}"):
+                st.session_state.edit_item_id = item['id']
+                st.rerun()
 
 # Daftar Item yang Bisa Diedit
 st.divider()
