@@ -327,29 +327,41 @@ if current_period_id:
                 st.write(f"**Volume Opname:** {volume_actual:,.2f} {item.get('unit','')}")
                 st.write(f"**Nilai Opname:** {format_rupiah(nilai_opname)}")
 
-                new_kasbon = st.number_input(
-                    "Kasbonan (Rp)", 
-                    min_value=0.0, 
-                    value=float(current_kasbon), 
-                    step=50000.0,
-                    key=f"kasbon_item_{rab_id}"
-                )
+                # Edit form
+                with st.form(key=f"edit_form_{rab_id}"):
+                    new_volume = st.number_input(
+                        "Volume Opname Baru", 
+                        min_value=0.0, 
+                        value=float(volume_actual), 
+                        step=0.01,
+                        key=f"vol_{rab_id}"
+                    )
+                    new_kasbon = st.number_input(
+                        "Kasbonan (Rp)", 
+                        min_value=0.0, 
+                        value=float(current_kasbon), 
+                        step=50000.0,
+                        key=f"kasbon_{rab_id}"
+                    )
 
-                if st.button("💾 Simpan Kasbon Item Ini", key=f"save_kasbon_{rab_id}"):
-                    if detail:
-                        supabase.table("opname_sub_details").update({
-                            "kasbon_amount": new_kasbon
-                        }).eq("id", detail["id"]).execute()
-                    else:
-                        supabase.table("opname_sub_details").insert({
-                            "period_id": current_period_id,
-                            "rab_item_id": rab_id,
-                            "volume_actual": volume_actual,
-                            "kasbon_amount": new_kasbon
-                        }).execute()
-                    
-                    st.success("Kasbon item berhasil disimpan!")
-                    st.rerun()
+                    submitted = st.form_submit_button("💾 Simpan Perubahan", type="primary")
+
+                    if submitted:
+                        if detail:
+                            supabase.table("opname_sub_details").update({
+                                "volume_actual": new_volume,
+                                "kasbon_amount": new_kasbon
+                            }).eq("id", detail["id"]).execute()
+                        else:
+                            supabase.table("opname_sub_details").insert({
+                                "period_id": current_period_id,
+                                "rab_item_id": rab_id,
+                                "volume_actual": new_volume,
+                                "kasbon_amount": new_kasbon
+                            }).execute()
+                        
+                        st.success("Data berhasil diperbarui!")
+                        st.rerun()
 
         # Ringkasan Total Kasbon
         total_kasbon_per_item = sum(d.get("kasbon_amount", 0) or 0 for d in opname_details)
