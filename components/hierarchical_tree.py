@@ -167,15 +167,14 @@ def display_rap_tree(
         key_prefix=key_prefix
     )
     
-# ==================== OPNAME TREE (BARU) ====================
+# ==================== OPNAME TREE (VERSI FLEXIBLE) ====================
 def display_opname_tree(
     items: List[Dict],
-    on_edit: Optional[Callable[[Dict], None]] = None,
-    on_delete: Optional[Callable[[Dict], None]] = None,
     search_term: str = "",
-    key_prefix: str = "opname"
+    key_prefix: str = "opname",
+    **kwargs  # menangkap parameter ekstra agar tidak error
 ) -> None:
-    """Specialized tree for Opname pages."""
+    """Specialized tree untuk halaman Opname (versi aman)."""
     
     def render_opname_content(item: Dict):
         from utils.helpers import format_rupiah
@@ -189,21 +188,15 @@ def display_opname_tree(
         col2.metric("Volume Opname", f"{volume_opname:,.2f}")
         col3.metric("Persentase", f"{persentase:.1f}%")
 
-        # Placeholder untuk aksi (bisa dikembangkan nanti)
+        # Tombol aksi (placeholder)
         col_edit, col_del = st.columns(2)
         with col_edit:
-            if st.button("✏️ Edit Opname", key=f"{key_prefix}_edit_{item['id']}", use_container_width=True):
-                if on_edit:
-                    on_edit(item)
-                else:
-                    st.session_state[f"{key_prefix}_edit_item"] = item
-                    st.rerun()
+            if st.button("✏️ Edit Opname", key=f"{key_prefix}_edit_{item.get('id', 'x')}", use_container_width=True):
+                st.session_state[f"{key_prefix}_edit_item"] = item
+                st.rerun()
         with col_del:
-            if st.button("🗑️ Hapus", key=f"{key_prefix}_del_{item['id']}", use_container_width=True):
-                if on_delete:
-                    on_delete(item)
-                else:
-                    st.warning("Fitur hapus Opname belum diaktifkan")
+            if st.button("🗑️ Hapus", key=f"{key_prefix}_del_{item.get('id', 'x')}", use_container_width=True):
+                st.warning("Fitur hapus Opname belum aktif")
 
     display_hierarchical_tree(
         items=items,
