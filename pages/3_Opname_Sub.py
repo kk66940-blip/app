@@ -298,3 +298,87 @@ col1, col2, col3 = st.columns(3)
 col1.metric("Total Opname Sub Periode Ini", f"Rp {total_nilai:,.0f}")
 col2.metric("Total Kasbon Sub", f"Rp {kasbon:,.0f}")
 col3.metric("Net Setelah Kasbon Sub", f"Rp {total_nilai - kasbon:,.0f}")
+
+# ==================== FITUR TAMBAHAN: KASBON PER ITEM ====================
+st.divider()
+st.subheader("💰 Input Kasbonan per Item")
+
+if current_period_id:
+    opname_details = supabase.table("opname_sub_details") \
+        .select("*") \
+        .eq("period_id", current_period_id).execute().data
+    opname_map = {d['rab_item_id']: d for d in opname_details}
+
+    items_with_volume = [
+        item for item in rab_items 
+        if opname_map.get(item['id'], {}).get('volume_actual', 0) > 0
+    ]
+
+    if items_with_volume:
+        for item in items_with_volume:
+            rab_id = item['id']
+            detail = opname_map.get(rab_id, {})
+            current_kasbon = detail.get("kasbon_amount", 0) or 0
+            volume_actual = detail.get("volume_actual", 0) or 0
+            rap_price = rap_price_map.get(rab_id, 0)
+            nilai_opname = volume_actual * rap_price
+
+            with st.expander(f"{item.get('code','')} - {item.get('description','')[:55]}", expanded=False):
+                st.write(f"**Volume Opname:** {volume_actual:,.2f} {item.get('unit','')}")
+                st.write(f"**Nilai Opname:** {format_rupiah(nilai_opname)}")
+
+                new_kasbon = st.number_input(
+                    "Kasbonan (Rp)", 
+                    min_value=0.0, 
+                    value=float(current_kasbon), 
+                    step=50000.0,
+                    key=f"kasbon_item_{rab_id}"
+                )
+
+                if st.button("💾 Simpan Kasbon Item Ini", key=f"save_kasbon_{rab_id}"):
+                    if detail:
+                        supabase.table("opname_sub_details").update({
+                            "kasbon_amount": new_kasbon
+                        }).eq("id", detail["id"]).execute()
+                    else:
+                        supabase.table("opname_sub_details").insert({
+                            "period_id": current_period_id,
+                            "rab_item_id": rab_id,
+                            "volume_actual": volume_actual,
+                            "kasbon_amount": new_kasbon
+                        }).execute()
+                    
+                    st.success("Kasbon item berhasil disimpan!")
+                    st.rerun()
+
+        # Ringkasan Total Kasbon
+        total_kasbon_per_item = sum(d.get("kasbon_amount", 0) or 0 for d in opname_details)
+        st.metric("Total Kasbon per Item (Periode Ini)", format_rupiah(total_kasbon_per_item))
+
+        if st.button("📋 Lihat Laporan Kasbon Detail"):
+            st.write("### Daftar Kasbon per Item")
+            kasbon_list = []
+            for item in rab_items:
+                d = opname_map.get(item['id'], {})
+                k = d.get("kasbon_amount", 0) or 0
+                if k > 0:
+                    kasbon_list.append({
+                        "Kode": item.get("code", ""),
+                        "Uraian": item.get("description", ""),
+                        "Kasbon (Rp)": k
+                    })
+            
+            if kasbon_list:
+                import pandas as pd
+                df = pd.DataFrame(kasbon_list)
+                st.dataframe(df, use_container_width=True)
+                csv = df.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    "⬇️ Download Laporan Kasbon (CSV)", 
+                    csv, 
+                    f"Kasbon_OpnameSub_Periode_{current_period_id}.csv"
+                )
+            else:
+                st.info("Belum ada kasbon yang diinput.")
+    else:
+        st.info("Belum ada item dengan volume opname di periode ini.")
