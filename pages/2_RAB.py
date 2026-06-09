@@ -217,14 +217,18 @@ if st.session_state.get("delete_item"):
     with col1:
         if st.button("✅ Ya, Hapus Permanen", type="primary", use_container_width=True):
             try:
-                # Hapus item
+                # Sinkronisasi: Hapus data terkait di RAP
+                supabase.table("rap_items").delete().eq("rab_item_id", item_to_delete["id"]).execute()
+                
+                # Sinkronisasi: Hapus data terkait di Opname
+                supabase.table("opname_details").delete().eq("rab_item_id", item_to_delete["id"]).execute()
+                supabase.table("opname_sub_details").delete().eq("rab_item_id", item_to_delete["id"]).execute()
+                
+                # Hapus item RAB utama
                 supabase.table("rab_items").delete().eq("id", item_to_delete["id"]).execute()
                 
-                # Opsional: hapus data terkait di RAP & Opname (bisa di-comment jika tidak mau)
-                # supabase.table("rap_items").delete().eq("rab_item_id", item_to_delete["id"]).execute()
-                
                 del st.session_state.delete_item
-                st.success("✅ Item RAB berhasil dihapus.")
+                st.success("✅ Item RAB + data terkait di RAP & Opname berhasil dihapus (sinkron).")
                 st.rerun()
             except Exception as e:
                 st.error(f"Gagal menghapus: {str(e)}")
