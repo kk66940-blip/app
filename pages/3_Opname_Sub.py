@@ -91,7 +91,9 @@ def generate_invoice_sub_pdf(period_id, period_label, kasbon_value):
         filename = f"Invoice_Sub_{project_name}_{period_label[:25]}.pdf".replace(" ", "_")
 
         buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=1.5*cm, leftMargin=1.5*cm, topMargin=1.5*cm, bottomMargin=1.5*cm)
+        doc = SimpleDocTemplate(buffer, pagesize=A4,
+                                rightMargin=1.5*cm, leftMargin=1.5*cm,
+                                topMargin=1.5*cm, bottomMargin=1.5*cm)
 
         styles = getSampleStyleSheet()
         normal = ParagraphStyle('Normal', parent=styles['Normal'], fontSize=9)
@@ -290,56 +292,10 @@ col1.metric("Total Opname Sub Periode Ini", f"Rp {total_nilai:,.0f}")
 col2.metric("Total Kasbon Sub", f"Rp {kasbon:,.0f}")
 col3.metric("Net Setelah Kasbon Sub", f"Rp {total_nilai - kasbon:,.0f}")
 
-# ==================== EDIT STABIL FINAL ====================
+# ==================== EDIT LANGSUNG DENGAN FORM (TANPA TOMBOL EDIT) ====================
 st.divider()
-st.subheader("✏️ Edit Volume & Kasbon per Item")
+st.subheader("✏️ Edit Volume & Kasbon per Item (Langsung)")
 
-if "edit_item_id" not in st.session_state:
-    st.session_state.edit_item_id = None
-
-# FORM EDIT
-if st.session_state.edit_item_id is not None:
-    edit_id = st.session_state.edit_item_id
-    opname_details = supabase.table("opname_sub_details") \
-        .select("*") \
-        .eq("period_id", current_period_id).execute().data
-    opname_map = {d['rab_item_id']: d for d in opname_details}
-    detail = opname_map.get(edit_id, {})
-
-    current_volume = detail.get("volume_actual", 0) or 0
-    current_kasbon = detail.get("kasbon_amount", 0) or 0
-
-    st.subheader(f"✏️ Edit: {detail.get('code', edit_id)}")
-
-    with st.form("edit_form_stable"):
-        new_volume = st.number_input("Volume Opname", value=float(current_volume), step=0.01)
-        new_kasbon = st.number_input("Kasbonan (Rp)", value=float(current_kasbon), step=50000.0)
-
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.form_submit_button("💾 Simpan Perubahan", type="primary"):
-                if detail:
-                    supabase.table("opname_sub_details").update({
-                        "volume_actual": new_volume,
-                        "kasbon_amount": new_kasbon
-                    }).eq("id", detail["id"]).execute()
-                else:
-                    supabase.table("opname_sub_details").insert({
-                        "period_id": current_period_id,
-                        "rab_item_id": edit_id,
-                        "volume_actual": new_volume,
-                        "kasbon_amount": new_kasbon
-                    }).execute()
-
-                st.session_state.edit_item_id = None
-                st.success("✅ Berhasil diperbarui!")
-                st.rerun()
-        with col2:
-            if st.form_submit_button("Batal"):
-                st.session_state.edit_item_id = None
-                st.rerun()
-
-# Daftar Item untuk Edit
 opname_details = supabase.table("opname_sub_details") \
     .select("*") \
     .eq("period_id", current_period_id).execute().data
@@ -351,17 +307,47 @@ if items_to_edit:
     for item in items_to_edit:
         rab_id = item['id']
         detail = opname_map.get(rab_id, {})
-        vol = detail.get("volume_actual", 0) or 0
-        kas = detail.get("kasbon_amount", 0) or 0
+        current_volume = detail.get("volume_actual", 0) or 0
+        current_kasbon = detail.get("kasbon_amount", 0) or 0
         rap_price = rap_price_map.get(rab_id, 0)
-        nilai = vol * rap_price
+        nilai_opname = current_volume * rap_price
 
         with st.expander(f"{item.get('code','')} - {item.get('description','')[:50]}", expanded=False):
-            st.write(f"**Volume:** {vol:,.2f} | **Nilai:** {nilai:,.0f} | **Kasbon:** {kas:,.0f}")
-            if st.button("✏️ Edit Item Ini", key=f"edit_btn_{rab_id}"):
-                st.session_state.edit_item_id = rab_id
-                st.rerun()
-else:
-    st.info("Belum ada data opname di periode ini. Input volume dulu melalui tree di atas.")
+            st.write(f"**Harga RAP:** {format_rupiah(rap_price)} | **Nilai Opname:** {format_rupiah(nilai_opname)}")
 
-st.caption("Fitur Edit Stabil - Volume & Kasbon per Item")
+            with st.form(key=f"direct_edit_form_{rab_id}"):
+                new_volume = st.number_input(
+                    "Volume Opname", 
+                    min_value=0.0, 
+                    value=float(current_volume), 
+                    step=0.01,
+                    key=f"vol_input_{rab_id}"
+                )
+                new_kasbon = st.number_input(
+                    "Kasbonan (Rp)", 
+                    min_value=0.0, 
+                    value=float(current_kasbon), 
+                    step=50000.0,
+                    key=f"kas_input_{rab_id}"
+                )
+
+                if st.form_submit_button("💾 Simpan Perubahan", type="primary"):
+                    if detail:
+                        supabase.table("opname_sub_details").update({
+                            "volume_actual": new_volume,
+                            "kasbon_amount": new_kasbon
+                        }).eq("id", detail["id"]).execute()
+                    else:
+                        supabase.table("opname_sub_details").insert({
+                            "period_id": current_period_id,
+                            "rab_item_id": rab_id,
+                            "volume_actual": new_volume,
+                            "kasbon_amount": new_kasbon
+                        }).execute()
+                    
+                    st.success("✅ Data berhasil diperbarui!")
+                    st.rerun()
+else:
+    st.info("Belum ada data Opname di periode ini. Input volume dulu melalui tree di atas.")
+
+st.caption("Edit Langsung - Isi field dan klik Simpan (tanpa tombol Edit terpisah)")
