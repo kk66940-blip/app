@@ -301,7 +301,7 @@ opname_details = supabase.table("opname_sub_details") \
     .eq("period_id", current_period_id).execute().data
 opname_map = {d['rab_item_id']: d for d in opname_details}
 
-items_to_edit = [item for item in rab_items if item['id'] in opname_map]
+items_to_edit = [item for item in rab_items if item.get('volume', 0) > 0]
 
 if items_to_edit:
     for item in items_to_edit:
@@ -348,6 +348,7 @@ if items_to_edit:
                     st.success("✅ Data berhasil diperbarui!")
                     st.rerun()
 else:
-    st.info("Belum ada data Opname di periode ini. Input volume dulu melalui tree di atas.")
+    st.info("Belum ada item RAB dengan volume di proyek ini.")
 
-st.caption("Edit Langsung - Isi field dan klik Simpan (tanpa tombol Edit terpisah)")
+st.caption("Edit Langsung - Buka expander, isi field, lalu klik Simpan (tanpa tombol Edit terpisah)")
+Upgrade to SuperGrok
