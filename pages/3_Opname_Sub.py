@@ -15,6 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from components.hierarchical_tree import display_opname_tree
+from utils.helpers import format_rupiah
 
 supabase = get_supabase()
 project_id = st.session_state.get("current_project_id")
@@ -351,4 +352,3 @@ else:
     st.info("Belum ada item RAB dengan volume di proyek ini.")
 
 st.caption("Edit Langsung - Buka expander, isi field, lalu klik Simpan (tanpa tombol Edit terpisah)")
-Upgrade to SuperGrok
