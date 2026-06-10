@@ -303,7 +303,7 @@ if current_period_id:
         .eq("period_id", current_period_id).execute().data
     opname_map = {d['rab_item_id']: d for d in opname_details}
 
-    items_with_data = [item for item in rab_items if item['id'] in opname_map]
+    items_with_data = [item for item in rab_items if item.get('volume', 0) > 0]
 
     if items_with_data:
         for item in items_with_data:
@@ -338,4 +338,4 @@ if current_period_id:
                         st.success("Volume berhasil diperbarui!")
                         st.rerun()
     else:
-        st.info("Belum ada data Opname di periode ini.")
+        st.info("Belum ada item RAB dengan volume di proyek ini.")

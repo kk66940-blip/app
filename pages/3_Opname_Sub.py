@@ -11,7 +11,7 @@ from collections import defaultdict
 import sys
 from pathlib import Path
 
-# Path fix for deployment
+# Path fix for deployment (Streamlit Cloud)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from components.hierarchical_tree import display_opname_tree
@@ -21,7 +21,8 @@ supabase = get_supabase()
 project_id = st.session_state.get("current_project_id")
 project_name = st.session_state.get("selected_project_name", "Proyek")
 
-# ==================== FUNGSI INVOICE ====================
+
+# ==================== FUNGSI INVOICE OPNAME SUB ====================
 def generate_invoice_sub_pdf(period_id, period_label, kasbon_value):
     try:
         project_res = supabase.table("projects").select("*").eq("id", project_id).execute()
@@ -173,7 +174,7 @@ if not project_id:
     st.warning("Pilih proyek di sidebar")
     st.stop()
 
-# ==================== PERIODE + KASBON GLOBAL ====================
+# ==================== PERIODE + KASBON ====================
 col1, col2, col3 = st.columns([3, 1, 1])
 
 with col1:
@@ -236,13 +237,14 @@ with col_c:
 
 st.divider()
 
-# ==================== TREE ====================
+# ==================== TREE OPNAME SUB ====================
 st.subheader("Struktur Opname Sub (Harga RAP)")
 
 if not current_period_id:
     st.info("Pilih atau buat periode terlebih dahulu")
     st.stop()
 
+# Data
 rab_items = supabase.table("rab_items")\
     .select("*")\
     .eq("project_id", project_id)\
@@ -260,6 +262,7 @@ actual_map = {d['rab_item_id']: d['volume_actual'] for d in opname_sub_details}
 rap_price_map = {r['rab_item_id']: r.get('execution_price', 0) for r in rap_items}
 
 def handle_save_opname_sub(item, new_actual, uploaded_file):
+    """Callback untuk Opname Sub"""
     try:
         supabase.table("opname_sub_details").upsert({
             "period_id": current_period_id,
@@ -271,12 +274,16 @@ def handle_save_opname_sub(item, new_actual, uploaded_file):
     except Exception as e:
         st.error(f"Error: {e}")
 
+
+# ==================== TAMPILAN HIRARKIS ====================
+st.subheader("Struktur Opname Sub (Harga RAP)")
+
 display_opname_tree(
     items=rab_items,
     actual_map=actual_map,
     rap_price_map=rap_price_map,
     on_save=handle_save_opname_sub,
-    show_photo_upload=False,
+    show_photo_upload=False,   # Saat ini belum ada upload foto di halaman ini
     key_prefix="opname_sub"
 )
 
@@ -293,62 +300,99 @@ col1.metric("Total Opname Sub Periode Ini", f"Rp {total_nilai:,.0f}")
 col2.metric("Total Kasbon Sub", f"Rp {kasbon:,.0f}")
 col3.metric("Net Setelah Kasbon Sub", f"Rp {total_nilai - kasbon:,.0f}")
 
-# ==================== EDIT LANGSUNG DENGAN FORM (TANPA TOMBOL EDIT) ====================
+# ==================== EDIT LANGSUNG + KASBON PER ITEM (TANPA TOMBOL EDIT TERPISAH) ====================
 st.divider()
 st.subheader("✏️ Edit Volume & Kasbon per Item (Langsung)")
 
-opname_details = supabase.table("opname_sub_details") \
-    .select("*") \
-    .eq("period_id", current_period_id).execute().data
-opname_map = {d['rab_item_id']: d for d in opname_details}
+if current_period_id:
+    opname_details = supabase.table("opname_sub_details") \
+        .select("*") \
+        .eq("period_id", current_period_id).execute().data
+    opname_map = {d['rab_item_id']: d for d in opname_details}
 
-items_to_edit = [item for item in rab_items if item.get('volume', 0) > 0]
+    # Tampilkan SEMUA item RAB yang punya volume (bisa langsung edit/create)
+    items_with_record = [
+        item for item in rab_items 
+        if item.get('volume', 0) > 0
+    ]
 
-if items_to_edit:
-    for item in items_to_edit:
-        rab_id = item['id']
-        detail = opname_map.get(rab_id, {})
-        current_volume = detail.get("volume_actual", 0) or 0
-        current_kasbon = detail.get("kasbon_amount", 0) or 0
-        rap_price = rap_price_map.get(rab_id, 0)
-        nilai_opname = current_volume * rap_price
+    if items_with_record:
+        for item in items_with_record:
+            rab_id = item['id']
+            detail = opname_map.get(rab_id, {})
+            current_kasbon = detail.get("kasbon_amount", 0) or 0
+            volume_actual = detail.get("volume_actual", 0) or 0
+            rap_price = rap_price_map.get(rab_id, 0)
+            nilai_opname = volume_actual * rap_price
 
-        with st.expander(f"{item.get('code','')} - {item.get('description','')[:50]}", expanded=False):
-            st.write(f"**Harga RAP:** {format_rupiah(rap_price)} | **Nilai Opname:** {format_rupiah(nilai_opname)}")
+            with st.expander(f"{item.get('code','')} - {item.get('description','')[:55]}", expanded=False):
+                st.write(f"**Volume Opname:** {volume_actual:,.2f} {item.get('unit','')}")
+                st.write(f"**Nilai Opname:** {format_rupiah(nilai_opname)}")
 
-            with st.form(key=f"direct_edit_form_{rab_id}"):
-                new_volume = st.number_input(
-                    "Volume Opname", 
-                    min_value=0.0, 
-                    value=float(current_volume), 
-                    step=0.01,
-                    key=f"vol_input_{rab_id}"
+                # Edit form
+                with st.form(key=f"edit_form_{rab_id}"):
+                    new_volume = st.number_input(
+                        "Volume Opname Baru", 
+                        min_value=0.0, 
+                        value=float(volume_actual), 
+                        step=0.01,
+                        key=f"vol_{rab_id}"
+                    )
+                    new_kasbon = st.number_input(
+                        "Kasbonan (Rp)", 
+                        min_value=0.0, 
+                        value=float(current_kasbon), 
+                        step=50000.0,
+                        key=f"kasbon_{rab_id}"
+                    )
+
+                    submitted = st.form_submit_button("💾 Simpan Perubahan", type="primary")
+
+                    if submitted:
+                        if detail:
+                            supabase.table("opname_sub_details").update({
+                                "volume_actual": new_volume,
+                                "kasbon_amount": new_kasbon
+                            }).eq("id", detail["id"]).execute()
+                        else:
+                            supabase.table("opname_sub_details").insert({
+                                "period_id": current_period_id,
+                                "rab_item_id": rab_id,
+                                "volume_actual": new_volume,
+                                "kasbon_amount": new_kasbon
+                            }).execute()
+                        
+                        st.success("Data berhasil diperbarui!")
+                        st.rerun()
+
+        # Ringkasan Total Kasbon
+        total_kasbon_per_item = sum(d.get("kasbon_amount", 0) or 0 for d in opname_details)
+        st.metric("Total Kasbon per Item (Periode Ini)", format_rupiah(total_kasbon_per_item))
+
+        if st.button("📋 Lihat Laporan Kasbon Detail"):
+            st.write("### Daftar Kasbon per Item")
+            kasbon_list = []
+            for item in rab_items:
+                d = opname_map.get(item['id'], {})
+                k = d.get("kasbon_amount", 0) or 0
+                if k > 0:
+                    kasbon_list.append({
+                        "Kode": item.get("code", ""),
+                        "Uraian": item.get("description", ""),
+                        "Kasbon (Rp)": k
+                    })
+            
+            if kasbon_list:
+                import pandas as pd
+                df = pd.DataFrame(kasbon_list)
+                st.dataframe(df, use_container_width=True)
+                csv = df.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    "⬇️ Download Laporan Kasbon (CSV)", 
+                    csv, 
+                    f"Kasbon_OpnameSub_Periode_{current_period_id}.csv"
                 )
-                new_kasbon = st.number_input(
-                    "Kasbonan (Rp)", 
-                    min_value=0.0, 
-                    value=float(current_kasbon), 
-                    step=50000.0,
-                    key=f"kas_input_{rab_id}"
-                )
-
-                if st.form_submit_button("💾 Simpan Perubahan", type="primary"):
-                    if detail:
-                        supabase.table("opname_sub_details").update({
-                            "volume_actual": new_volume,
-                            "kasbon_amount": new_kasbon
-                        }).eq("id", detail["id"]).execute()
-                    else:
-                        supabase.table("opname_sub_details").insert({
-                            "period_id": current_period_id,
-                            "rab_item_id": rab_id,
-                            "volume_actual": new_volume,
-                            "kasbon_amount": new_kasbon
-                        }).execute()
-                    
-                    st.success("✅ Data berhasil diperbarui!")
-                    st.rerun()
-else:
-    st.info("Belum ada item RAB dengan volume di proyek ini.")
-
-st.caption("Edit Langsung - Buka expander, isi field, lalu klik Simpan (tanpa tombol Edit terpisah)")
+            else:
+                st.info("Belum ada kasbon yang diinput.")
+    else:
+        st.info("Belum ada item RAB dengan volume di proyek ini.")
