@@ -166,41 +166,140 @@ def display_rap_tree(
         search_term=search_term,
         key_prefix=key_prefix
     )
-    
-# ==================== OPNAME TREE (VERSI FLEXIBLE) ====================
+
+
+# ==================== OPNAME TREE ====================
 def display_opname_tree(
     items: List[Dict],
+    actual_map: Optional[Dict] = None,
+    on_save: Optional[Callable] = None,
+    show_photo_upload: bool = False,
+    rap_price_map: Optional[Dict] = None,
+    photo_map: Optional[Dict] = None,
     search_term: str = "",
     key_prefix: str = "opname",
-    **kwargs  # menangkap parameter ekstra agar tidak error
 ) -> None:
-    """Specialized tree untuk halaman Opname (versi aman)."""
-    
+    """Specialized tree untuk halaman Opname dengan input volume inline.
+
+    Parameters
+    ----------
+    items           : Daftar RAB items (parent dan leaf) dari Supabase.
+    actual_map      : {rab_item_id: actual_volume} dari opname_details.
+    on_save         : Callback fn(item, new_volume, uploaded_file) untuk simpan.
+    show_photo_upload: Tampilkan widget upload foto (Opname utama).
+    rap_price_map   : {rab_item_id: execution_price} untuk Opname Sub.
+                      Jika None, digunakan unit_price dari RAB.
+    photo_map       : {rab_item_id: photo_url} untuk tampil foto yang sudah ada.
+    search_term     : Filter pencarian.
+    key_prefix      : Prefix unik agar tidak ada konflik widget key.
+    """
+    from utils.helpers import format_rupiah
+
+    # Normalisasi default
+    if actual_map is None:
+        actual_map = {}
+    if rap_price_map is None:
+        rap_price_map = {}
+    if photo_map is None:
+        photo_map = {}
+
+    # Bangun children_map sekali untuk kalkulasi subtotal header
+    children_map_local = build_tree(items)
+
+    def _calc_subtotal(parent_id) -> float:
+        """Hitung total nilai opname seluruh descendants secara rekursif."""
+        total = 0.0
+        for child in children_map_local.get(parent_id, []):
+            cid = child['id']
+            vol = actual_map.get(cid, 0) or 0
+            price = (rap_price_map.get(cid, 0) or 0) if rap_price_map \
+                    else (child.get('unit_price', 0) or 0)
+            total += vol * price
+            total += _calc_subtotal(cid)
+        return total
+
     def render_opname_content(item: Dict):
-        from utils.helpers import format_rupiah
-        
-        vol = item.get('volume', 0) or 0
-        volume_opname = item.get('volume_opname', 0) or 0
-        persentase = item.get('persentase', 0) or 0
+        item_id = item.get('id')
+        vol_rab = item.get('volume', 0) or 0
+        unit    = item.get('unit', '')
 
+        # Tentukan harga: RAP atau RAB
+        if rap_price_map:
+            price       = rap_price_map.get(item_id, 0) or 0
+            price_label = "Harga RAP"
+        else:
+            price       = item.get('unit_price', 0) or 0
+            price_label = "Harga RAB"
+
+        # ── Header / grup (vol_rab == 0): tampilkan ringkasan subtotal ──
+        if vol_rab == 0:
+            subtotal = _calc_subtotal(item_id)
+            if subtotal > 0:
+                st.caption(f"📊 Total nilai opname grup ini: **{format_rupiah(subtotal)}**")
+            else:
+                st.caption("— Belum ada data opname di grup ini")
+            return
+
+        # ── Leaf item: tampilkan metrics + form input ──
+        vol_opname  = actual_map.get(item_id, 0) or 0
+        nilai_opname = vol_opname * price
+
+        # Metrics row
         col1, col2, col3 = st.columns(3)
-        col1.metric("Volume RAB", f"{vol:,.2f} {item.get('unit', '')}")
-        col2.metric("Volume Opname", f"{volume_opname:,.2f}")
-        col3.metric("Persentase", f"{persentase:.1f}%")
+        col1.metric("Volume RAB", f"{vol_rab:,.2f} {unit}")
+        col2.metric("Volume Opname", f"{vol_opname:,.2f} {unit}")
+        col3.metric(price_label, format_rupiah(price))
 
-        # Tombol aksi (placeholder)
-        col_edit, col_del = st.columns(2)
-        with col_edit:
-            if st.button("✏️ Edit Opname", key=f"{key_prefix}_edit_{item.get('id', 'x')}", use_container_width=True):
-                st.session_state[f"{key_prefix}_edit_item"] = item
-                st.rerun()
-        with col_del:
-            if st.button("🗑️ Hapus", key=f"{key_prefix}_del_{item.get('id', 'x')}", use_container_width=True):
-                st.warning("Fitur hapus Opname belum aktif")
+        # Nilai & persentase (hanya jika sudah ada data)
+        if vol_opname > 0:
+            persen = (vol_opname / vol_rab * 100) if vol_rab > 0 else 0
+            st.success(
+                f"✅  Nilai: **{format_rupiah(nilai_opname)}** "
+                f"({persen:.1f}% dari volume RAB)"
+            )
+
+        # Foto sebelumnya (di luar form)
+        if show_photo_upload and photo_map.get(item_id):
+            with st.expander("🖼️ Lihat Foto Sebelumnya", expanded=False):
+                st.image(photo_map[item_id], use_container_width=True)
+
+        # ── Form input volume (+ foto opsional) ──
+        with st.form(key=f"{key_prefix}_form_{item_id}"):
+            new_volume = st.number_input(
+                "📥 Input Volume Opname",
+                min_value=0.0,
+                value=float(vol_opname),
+                step=0.01,
+                format="%.2f",
+            )
+
+            uploaded_file = None
+            if show_photo_upload:
+                uploaded_file = st.file_uploader(
+                    "📸 Upload Foto (opsional)",
+                    type=["jpg", "jpeg", "png"],
+                )
+
+            # Pratinjau nilai baru sebelum simpan
+            if price > 0:
+                nilai_baru = new_volume * price
+                st.caption(f"💡 Pratinjau nilai: {format_rupiah(nilai_baru)}")
+
+            submitted = st.form_submit_button(
+                "💾 Simpan",
+                type="primary",
+                use_container_width=True,
+            )
+
+            if submitted:
+                if on_save:
+                    on_save(item, new_volume, uploaded_file)
+                else:
+                    st.warning("⚠️ Fungsi simpan belum dikonfigurasi")
 
     display_hierarchical_tree(
         items=items,
         render_content=render_opname_content,
         search_term=search_term,
-        key_prefix=key_prefix
+        key_prefix=key_prefix,
     )
