@@ -91,9 +91,7 @@ def generate_invoice_sub_pdf(period_id, period_label, kasbon_value):
         filename = f"Invoice_Sub_{project_name}_{period_label[:25]}.pdf".replace(" ", "_")
 
         buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4,
-                                rightMargin=1.5*cm, leftMargin=1.5*cm,
-                                topMargin=1.5*cm, bottomMargin=1.5*cm)
+        doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=1.5*cm, leftMargin=1.5*cm, topMargin=1.5*cm, bottomMargin=1.5*cm)
 
         styles = getSampleStyleSheet()
         normal = ParagraphStyle('Normal', parent=styles['Normal'], fontSize=9)
@@ -292,15 +290,14 @@ col1.metric("Total Opname Sub Periode Ini", f"Rp {total_nilai:,.0f}")
 col2.metric("Total Kasbon Sub", f"Rp {kasbon:,.0f}")
 col3.metric("Net Setelah Kasbon Sub", f"Rp {total_nilai - kasbon:,.0f}")
 
-# ==================== EDIT STABIL + KASBON PER ITEM ====================
+# ==================== EDIT STABIL FINAL ====================
 st.divider()
 st.subheader("✏️ Edit Volume & Kasbon per Item")
 
-# Session State
 if "edit_item_id" not in st.session_state:
     st.session_state.edit_item_id = None
 
-# FORM EDIT (DI ATAS)
+# FORM EDIT
 if st.session_state.edit_item_id is not None:
     edit_id = st.session_state.edit_item_id
     opname_details = supabase.table("opname_sub_details") \
@@ -312,7 +309,7 @@ if st.session_state.edit_item_id is not None:
     current_volume = detail.get("volume_actual", 0) or 0
     current_kasbon = detail.get("kasbon_amount", 0) or 0
 
-    st.subheader(f"✏️ Edit Item ID: {edit_id}")
+    st.subheader(f"✏️ Edit: {detail.get('code', edit_id)}")
 
     with st.form("edit_form_stable"):
         new_volume = st.number_input("Volume Opname", value=float(current_volume), step=0.01)
@@ -335,7 +332,7 @@ if st.session_state.edit_item_id is not None:
                     }).execute()
 
                 st.session_state.edit_item_id = None
-                st.success("Berhasil disimpan!")
+                st.success("✅ Berhasil diperbarui!")
                 st.rerun()
         with col2:
             if st.form_submit_button("Batal"):
@@ -361,7 +358,7 @@ if items_to_edit:
 
         with st.expander(f"{item.get('code','')} - {item.get('description','')[:50]}", expanded=False):
             st.write(f"**Volume:** {vol:,.2f} | **Nilai:** {nilai:,.0f} | **Kasbon:** {kas:,.0f}")
-            if st.button("✏️ Edit", key=f"edit_btn_{rab_id}"):
+            if st.button("✏️ Edit Item Ini", key=f"edit_btn_{rab_id}"):
                 st.session_state.edit_item_id = rab_id
                 st.rerun()
 else:
