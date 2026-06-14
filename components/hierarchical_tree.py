@@ -174,8 +174,10 @@ def display_opname_tree(
     actual_map: Optional[Dict] = None,
     on_save: Optional[Callable] = None,
     show_photo_upload: bool = False,
+    show_kasbon: bool = False,
     rap_price_map: Optional[Dict] = None,
     photo_map: Optional[Dict] = None,
+    kasbon_map: Optional[Dict] = None,
     search_term: str = "",
     key_prefix: str = "opname",
 ) -> None:
@@ -202,6 +204,8 @@ def display_opname_tree(
         rap_price_map = {}
     if photo_map is None:
         photo_map = {}
+    if kasbon_map is None:
+        kasbon_map = {}
 
     # Bangun children_map sekali untuk kalkulasi subtotal header
     children_map_local = build_tree(items)
@@ -263,7 +267,7 @@ def display_opname_tree(
             with st.expander("🖼️ Lihat Foto Sebelumnya", expanded=False):
                 st.image(photo_map[item_id], use_container_width=True)
 
-        # ── Form input volume (+ foto opsional) ──
+        # ── Form input volume (+ kasbon + foto opsional) ──
         with st.form(key=f"{key_prefix}_form_{item_id}"):
             new_volume = st.number_input(
                 "📥 Input Volume Opname",
@@ -272,6 +276,18 @@ def display_opname_tree(
                 step=0.01,
                 format="%.2f",
             )
+
+            # Input kasbon per item (hanya untuk Opname Sub)
+            new_kasbon = 0.0
+            if show_kasbon:
+                current_kasbon = kasbon_map.get(item_id, 0) or 0
+                new_kasbon = st.number_input(
+                    "💰 Kasbon (Rp)",
+                    min_value=0.0,
+                    value=float(current_kasbon),
+                    step=50000.0,
+                    format="%.0f",
+                )
 
             uploaded_file = None
             if show_photo_upload:
@@ -283,7 +299,10 @@ def display_opname_tree(
             # Pratinjau nilai baru sebelum simpan
             if price > 0:
                 nilai_baru = new_volume * price
-                st.caption(f"💡 Pratinjau nilai: {format_rupiah(nilai_baru)}")
+                preview_text = f"💡 Pratinjau nilai: {format_rupiah(nilai_baru)}"
+                if show_kasbon and new_kasbon > 0:
+                    preview_text += f" | Kasbon: {format_rupiah(new_kasbon)} | Net: {format_rupiah(nilai_baru - new_kasbon)}"
+                st.caption(preview_text)
 
             submitted = st.form_submit_button(
                 "💾 Simpan",
@@ -293,7 +312,7 @@ def display_opname_tree(
 
             if submitted:
                 if on_save:
-                    on_save(item, new_volume, uploaded_file)
+                    on_save(item, new_volume, uploaded_file, new_kasbon)
                 else:
                     st.warning("⚠️ Fungsi simpan belum dikonfigurasi")
 

@@ -270,17 +270,19 @@ opname_sub_details = supabase.table("opname_sub_details")\
     .eq("period_id", current_period_id).execute().data
 
 actual_map = {d['rab_item_id']: d['volume_actual'] for d in opname_sub_details}
+kasbon_map = {d['rab_item_id']: (d.get('kasbon_amount') or 0) for d in opname_sub_details}
 rap_price_map = {r['rab_item_id']: r.get('execution_price', 0) for r in rap_items}
 
-def handle_save_opname_sub(item, new_actual, uploaded_file):
-    """Callback untuk Opname Sub"""
+def handle_save_opname_sub(item, new_actual, uploaded_file, new_kasbon=0):
+    """Callback untuk Opname Sub — simpan volume + kasbon per item"""
     try:
         supabase.table("opname_sub_details").upsert({
             "period_id": current_period_id,
             "rab_item_id": item['id'],
-            "volume_actual": new_actual
+            "volume_actual": new_actual,
+            "kasbon_amount": new_kasbon
         }).execute()
-        st.success("✅ Volume Sub berhasil disimpan!")
+        st.success("✅ Volume & Kasbon Sub berhasil disimpan!")
         st.rerun()
     except Exception as e:
         st.error(f"Error: {e}")
@@ -293,8 +295,10 @@ display_opname_tree(
     items=rab_items,
     actual_map=actual_map,
     rap_price_map=rap_price_map,
+    kasbon_map=kasbon_map,
     on_save=handle_save_opname_sub,
-    show_photo_upload=False,   # Saat ini belum ada upload foto di halaman ini
+    show_photo_upload=False,
+    show_kasbon=True,
     key_prefix="opname_sub"
 )
 
