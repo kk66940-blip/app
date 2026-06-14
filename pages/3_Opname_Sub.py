@@ -42,6 +42,7 @@ def generate_invoice_sub_pdf(period_id, period_label, kasbon_value):
             .eq("period_id", period_id).execute().data
 
         actual_map = {d['rab_item_id']: d['volume_actual'] for d in opname_sub_details}
+        kasbon_item_map = {d['rab_item_id']: (d.get('kasbon_amount') or 0) for d in opname_sub_details}
         rap_price_map = {r['rab_item_id']: r.get('execution_price', 0) for r in rap_items}
 
         children_map = defaultdict(list)
@@ -58,19 +59,22 @@ def generate_invoice_sub_pdf(period_id, period_label, kasbon_value):
             return
 
         subtotal = 0
-        table_data = [["No", "Uraian Pekerjaan", "Sat", "Vol", "Harga RAP (Rp)", "Nilai (Rp)"]]
+        total_kasbon_per_item = 0
+        table_data = [["No", "Uraian Pekerjaan", "Sat", "Vol", "Harga RAP (Rp)", "Nilai (Rp)", "Kasbon (Rp)"]]
         item_no = 1
 
         for main_item in main_items:
             main_id = main_item['id']
-            table_data.append(["", f"▶ {main_item.get('description', '')}", "", "", "", ""])
+            table_data.append(["", f"▶ {main_item.get('description', '')}", "", "", "", "", ""])
 
             for child in children_map.get(main_id, []):
                 if actual_map.get(child['id'], 0) > 0:
                     vol = actual_map[child['id']]
                     price = rap_price_map.get(child['id'], 0)
                     nilai = vol * price
+                    kasbon_item = kasbon_item_map.get(child['id'], 0)
                     subtotal += nilai
+                    total_kasbon_per_item += kasbon_item
 
                     table_data.append([
                         str(item_no),
@@ -78,17 +82,18 @@ def generate_invoice_sub_pdf(period_id, period_label, kasbon_value):
                         child.get('unit', ''),
                         f"{vol:,.2f}",
                         f"{price:,.0f}",
-                        f"{nilai:,.0f}"
+                        f"{nilai:,.0f}",
+                        f"{kasbon_item:,.0f}" if kasbon_item > 0 else "-"
                     ])
                     item_no += 1
 
-        table_data.append(["", "SUBTOTAL", "", "", "", f"{subtotal:,.0f}"])
+        table_data.append(["", "SUBTOTAL", "", "", "", f"{subtotal:,.0f}", f"{total_kasbon_per_item:,.0f}"])
 
         ppn_rate = project.get('ppn_rate', 11.0)
         retensi_rate = project.get('retensi_rate', 5.0)
         ppn = subtotal * (ppn_rate / 100)
         retensi = subtotal * (retensi_rate / 100)
-        grand_total = subtotal + ppn - retensi - kasbon_value
+        grand_total = subtotal + ppn - retensi - total_kasbon_per_item - kasbon_value
 
         filename = f"Invoice_Sub_{project_name}_{period_label[:25]}.pdf".replace(" ", "_")
 
@@ -108,7 +113,8 @@ def generate_invoice_sub_pdf(period_id, period_label, kasbon_value):
         elements.append(Paragraph(f"<b>Tanggal:</b> {datetime.now().strftime('%d %B %Y')}", normal))
         elements.append(Spacer(1, 0.5*cm))
 
-        t = Table(table_data, colWidths=[1*cm, 7*cm, 1.5*cm, 2*cm, 3*cm, 3*cm])
+        # Kolom lebih ramping karena ada kolom Kasbon baru
+        t = Table(table_data, colWidths=[0.8*cm, 6*cm, 1.3*cm, 1.8*cm, 2.8*cm, 2.8*cm, 2.5*cm])
         t.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2E7D32')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
@@ -117,6 +123,8 @@ def generate_invoice_sub_pdf(period_id, period_label, kasbon_value):
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
             ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#d4edda')),
             ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            # Highlight kolom kasbon per item dengan warna kuning muda
+            ('BACKGROUND', (6, 1), (6, -1), colors.HexColor('#FFFDE7')),
         ]))
         elements.append(t)
         elements.append(Spacer(1, 0.5*cm))
@@ -126,7 +134,8 @@ def generate_invoice_sub_pdf(period_id, period_label, kasbon_value):
             ["Subtotal Opname Sub", f"{subtotal:,.0f}"],
             [f"PPN ({ppn_rate}%)", f"{ppn:,.0f}"],
             [f"Retensi ({retensi_rate}%)", f"- {retensi:,.0f}"],
-            ["Potongan Kasbon Sub", f"- {kasbon_value:,.0f}"],
+            ["Potongan Kasbon per Item", f"- {total_kasbon_per_item:,.0f}"],
+            ["Potongan Kasbon Sub (Global)", f"- {kasbon_value:,.0f}"],
             ["GRAND TOTAL", f"{grand_total:,.0f}"]
         ]
 
@@ -137,6 +146,8 @@ def generate_invoice_sub_pdf(period_id, period_label, kasbon_value):
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, -1), 10),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            # Highlight baris kasbon per item dengan kuning muda
+            ('BACKGROUND', (0, 4), (-1, 4), colors.HexColor('#FFFDE7')),
             ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#d4edda')),
             ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
             ('FONTSIZE', (0, -1), (-1, -1), 12),
@@ -295,10 +306,19 @@ total_nilai = sum(
     for item in rab_items
 )
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 col1.metric("Total Opname Sub Periode Ini", f"Rp {total_nilai:,.0f}")
-col2.metric("Total Kasbon Sub", f"Rp {kasbon:,.0f}")
-col3.metric("Net Setelah Kasbon Sub", f"Rp {total_nilai - kasbon:,.0f}")
+
+# Hitung total kasbon per item dari opname_sub_details
+_kasbon_per_item_total = sum(
+    (d.get('kasbon_amount') or 0)
+    for d in supabase.table("opname_sub_details")
+        .select("kasbon_amount")
+        .eq("period_id", current_period_id).execute().data
+)
+col2.metric("Total Kasbon per Item", f"Rp {_kasbon_per_item_total:,.0f}")
+col3.metric("Total Kasbon Sub (Global)", f"Rp {kasbon:,.0f}")
+col4.metric("Net Setelah Semua Kasbon", f"Rp {total_nilai - _kasbon_per_item_total - kasbon:,.0f}")
 
 # ==================== EDIT LANGSUNG + KASBON PER ITEM (TANPA TOMBOL EDIT TERPISAH) ====================
 st.divider()
