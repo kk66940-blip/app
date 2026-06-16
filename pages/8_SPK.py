@@ -129,7 +129,17 @@ with tab1:
                 else:
                     try:
                         today_str = datetime.now().strftime("%d%m%y")
-                        spk_no = f"SPK/{today_str}/{selected_main_code}/001"
+                        # Hitung SPK yang sudah ada untuk proyek ini agar nomor
+                        # urut tidak bentrok (sebelumnya selalu hardcoded /001).
+                        existing_count = (
+                            supabase.table("spk")
+                            .select("id", count="exact")
+                            .eq("project_id", project_id)
+                            .execute()
+                            .count
+                        ) or 0
+                        seq = str(existing_count + 1).zfill(3)
+                        spk_no = f"SPK/{today_str}/{selected_main_code}/{seq}"
 
                         spk_data = {
                             "project_id": project_id,

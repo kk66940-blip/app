@@ -1,21 +1,21 @@
-import streamlit as st
-from utils.supabase_client import get_supabase
-from datetime import datetime
+import sys
+import uuid
+from pathlib import Path
 from io import BytesIO
+from datetime import datetime
+from collections import defaultdict
+
+import streamlit as st
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.units import cm
-from collections import defaultdict
-import uuid
-import streamlit as st
-import sys
-from pathlib import Path
 
-# Path fix for deployment (Streamlit Cloud, etc.)
+# Path fix untuk deployment (Streamlit Cloud, dll.)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from utils.supabase_client import get_supabase
 from components.hierarchical_tree import display_opname_tree
 
 supabase = get_supabase()
@@ -240,8 +240,13 @@ opname_details = supabase.table("opname_details")\
 actual_map = {d['rab_item_id']: d.get('actual_volume', 0) for d in opname_details}
 photo_map = {d['rab_item_id']: d.get('photo_url') for d in opname_details}
 
-def handle_save_opname(item, new_actual, uploaded_file):
-    """Callback untuk menyimpan volume + foto"""
+def handle_save_opname(item, new_actual, uploaded_file, new_kasbon=0):
+    """Callback untuk menyimpan volume + foto.
+
+    new_kasbon diterima agar cocok dengan signature yang dipanggil komponen
+    tree, tapi tidak dipakai di Opname utama (kasbon per-item hanya relevan
+    untuk Opname Sub).
+    """
     try:
         rab_id = item['id']
         existing = supabase.table("opname_details") \
@@ -280,8 +285,6 @@ def handle_save_opname(item, new_actual, uploaded_file):
 
 
 # ==================== TAMPILAN HIRARKIS (Komponen Reusable) ====================
-st.subheader("Struktur Opname")
-
 display_opname_tree(
     items=rab_items,
     actual_map=actual_map,

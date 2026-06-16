@@ -289,8 +289,6 @@ def handle_save_opname_sub(item, new_actual, uploaded_file, new_kasbon=0):
 
 
 # ==================== TAMPILAN HIRARKIS ====================
-st.subheader("Struktur Opname Sub (Harga RAP)")
-
 display_opname_tree(
     items=rab_items,
     actual_map=actual_map,

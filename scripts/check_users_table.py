@@ -1,20 +1,27 @@
+"""
+scripts/check_users_table.py
+Utilitas debug: lihat nama kolom tabel users.
+Jalankan: python scripts/check_users_table.py
+"""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from utils.supabase_client import get_supabase
 
-supabase = get_supabase()
 
-print("🔍 DEBUG STRUKTUR TABLE USERS")
-print("=" * 60)
+def main():
+    supabase = get_supabase()
+    res = supabase.table("users").select("*").limit(1).execute()
+    if res.data:
+        print("Kolom pada tabel users:")
+        for key in res.data[0].keys():
+            print(f"  • {key}")
+    else:
+        print("❌ Tabel users kosong atau tidak bisa diakses.")
 
-# Ambil 1 baris untuk melihat kolom apa saja yang ada
-res = supabase.table("users").select("*").limit(1).execute()
 
-if res.data:
-    user = res.data[0]
-    print("✅ Kolom yang ada di table users:")
-    for key in user.keys():
-        print(f"   • {key} → {user[key]}")
-else:
-    print("❌ Table users kosong atau tidak bisa diakses!")
-
-print("\n" + "=" * 60)
-print("Kirimkan output ini ke saya supaya saya tahu nama kolom password yang benar.")
+if __name__ == "__main__":
+    main()

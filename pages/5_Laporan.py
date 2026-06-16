@@ -1,5 +1,4 @@
 import streamlit as st
-import csv
 from utils.supabase_client import get_supabase
 from datetime import datetime
 from io import BytesIO
@@ -315,6 +314,6 @@ if st.button("🖨️ Export ke PDF (Format Profesional)", use_container_width=T
         mime="application/pdf",
         use_container_width=True
     )
-st.info("💡 Export/Import menggunakan CSV (stabil). Versi Excel akan ditambahkan nanti.")
+st.info("💡 Halaman ini menyediakan export RAB ke Excel & PDF, serta import RAB dari Excel.")
 
 st.caption(f"Update: {datetime.now().strftime('%d %B %Y %H:%M')}")

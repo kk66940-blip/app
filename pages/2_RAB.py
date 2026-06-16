@@ -6,16 +6,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from utils.supabase_client import get_supabase
-from utils.helpers import format_rupiah
 from datetime import datetime
-from collections import defaultdict
-from io import BytesIO
 
-# ==================== IMPORT BARU ====================
 from utils.ahsp_helper import get_ahsp_for_selection
 from components.hierarchical_tree import display_rab_tree
 
-# Export (Centralized)
+# Export terpusat
 from utils.export_utils import export_rab_excel, export_rab_pdf
 
 supabase = get_supabase()
@@ -178,10 +174,7 @@ with st.expander("➕ Tambah Item dari Database AHSP", expanded=False):
 
 st.divider()
 
-# ==================== STRUKTUR RAB ====================
-st.subheader("Struktur RAB")
-
-# ==================== TAMPILAN HIRARKIS (Menggunakan Komponen Reusable) ====================
+# ==================== STRUKTUR RAB (Komponen Reusable) ====================
 st.subheader("Struktur RAB")
 
 def handle_rab_edit(item):
@@ -281,163 +274,6 @@ if "edit_item" in st.session_state:
 st.divider()
 
 # ==================== EXPORT (Centralized via utils/export_utils.py) ====================
-
-
-def export_rab_pdf_hierarchical(rab_items, project_name):
-    """Export RAB ke PDF dengan tampilan rapih multi-level hierarchy (matching Excel quality)"""
-    if not rab_items:
-        st.warning("Tidak ada data RAB untuk diekspor.")
-        return
-
-    children_map = build_tree(rab_items)
-
-    all_ids = {item['id'] for item in rab_items}
-    root_items = [item for item in rab_items if item.get('parent_id') is None or item.get('parent_id') not in all_ids]
-    root_items = sorted(root_items, key=lambda x: (x.get('sort_order', 0), x.get('id', 0)))
-
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4,
-                            rightMargin=1.2*cm, leftMargin=1.2*cm,
-                            topMargin=1.2*cm, bottomMargin=1.2*cm)
-
-    styles = getSampleStyleSheet()
-    normal = ParagraphStyle('Normal', parent=styles['Normal'], fontSize=8, leading=10)
-    title_style = ParagraphStyle('Title', parent=styles['Normal'], fontSize=14, fontName='Helvetica-Bold', textColor=colors.HexColor('#0d6efd'))
-    header_style = ParagraphStyle('Header', parent=styles['Normal'], fontSize=9, fontName='Helvetica-Bold', textColor=colors.white, leading=11)
-    subtotal_style = ParagraphStyle('Subtotal', parent=styles['Normal'], fontSize=8, fontName='Helvetica-Bold', leading=10)
-    grand_style = ParagraphStyle('Grand', parent=styles['Normal'], fontSize=9, fontName='Helvetica-Bold', leading=11)
-
-    elements = []
-    elements.append(Paragraph("RENCANA ANGGARAN BIAYA (RAB)", title_style))
-    elements.append(Paragraph(f"<b>Proyek:</b> {project_name}", normal))
-    elements.append(Paragraph(f"<b>Tanggal:</b> {datetime.now().strftime('%d %B %Y')}", normal))
-    elements.append(Spacer(1, 0.25*cm))
-
-    table_data = [["No", "Uraian Pekerjaan", "Sat", "Vol", "Harga (Rp)", "Jumlah (Rp)"]]
-    
-    # Track row indices for styling
-    header_row_indices = []      # rows that are section headers (green)
-    subtotal_row_indices = []    # rows that are SUBTOTAL (yellow)
-    grand_total_row_index = None
-
-    grand_total = 0
-    current_row = 1  # start after header row (row 0)
-
-    def add_to_pdf(node, path, children_map):
-        nonlocal grand_total, current_row
-        node_id = node['id']
-        children = children_map.get(node_id, [])
-        has_children = len(children) > 0
-        current_no = ".".join(map(str, path))
-
-        if has_children:
-            # Header row (will be styled green)
-            header_row_indices.append(current_row)
-            table_data.append(["", Paragraph(f"▶ {node.get('description', '')}", header_style), "", "", "", ""])
-            current_row += 1
-            
-            sub_total = 0
-            for idx, child in enumerate(children, 1):
-                new_path = path + [idx]
-                child_total = add_to_pdf(child, new_path, children_map)
-                sub_total += child_total
-            
-            # Subtotal row
-            subtotal_row_indices.append(current_row)
-            table_data.append([
-                "", 
-                Paragraph("<b>SUBTOTAL</b>", subtotal_style), 
-                "", "", "", 
-                Paragraph(f"<b>{sub_total:,.0f}</b>", subtotal_style)
-            ])
-            current_row += 1
-            return sub_total
-        else:
-            vol = node.get('volume', 0) or 0
-            price = node.get('unit_price', 0) or 0
-            total = vol * price
-            grand_total += total
-
-            table_data.append([
-                current_no,
-                Paragraph(f"    {node.get('description', '')}", normal),
-                node.get('unit', ''),
-                f"{vol:,.2f}",
-                f"{price:,.0f}",
-                f"{total:,.0f}"
-            ])
-            current_row += 1
-            return total
-
-    for idx, root in enumerate(root_items, 1):
-        add_to_pdf(root, [idx], children_map)
-
-    # Grand Total
-    grand_total_row_index = current_row
-    table_data.append([
-        "", 
-        Paragraph("<b>GRAND TOTAL</b>", grand_style), 
-        "", "", "", 
-        Paragraph(f"<b>{grand_total:,.0f}</b>", grand_style)
-    ])
-
-    # Column widths (balanced for readability)
-    col_widths = [1.0*cm, 8.0*cm, 1.1*cm, 1.7*cm, 2.6*cm, 2.8*cm]
-    t = Table(table_data, colWidths=col_widths, repeatRows=1)
-
-    # Build dynamic style commands
-    style_commands = [
-        # Header row (blue)
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0d6efd')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 8),
-        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cccccc')),
-        ('FONTSIZE', (0, 1), (-1, -1), 7.5),
-        ('ALIGN', (3, 1), (3, -1), 'RIGHT'),  # Vol
-        ('ALIGN', (4, 1), (5, -1), 'RIGHT'),  # Harga & Jumlah
-        ('LEFTPADDING', (0, 0), (-1, -1), 3),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 3),
-        ('TOPPADDING', (0, 0), (-1, -1), 4),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-    ]
-
-    # Green background for all header rows (▶ section headers)
-    for row_idx in header_row_indices:
-        style_commands.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor('#28a745')))
-        style_commands.append(('TEXTCOLOR', (0, row_idx), (-1, row_idx), colors.white))
-        style_commands.append(('FONTNAME', (0, row_idx), (-1, row_idx), 'Helvetica-Bold'))
-
-    # Yellow background + bold for SUBTOTAL rows
-    for row_idx in subtotal_row_indices:
-        style_commands.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor('#fff3cd')))
-        style_commands.append(('FONTNAME', (0, row_idx), (-1, row_idx), 'Helvetica-Bold'))
-
-    # Green background for GRAND TOTAL
-    if grand_total_row_index:
-        style_commands.append(('BACKGROUND', (0, grand_total_row_index), (-1, grand_total_row_index), colors.HexColor('#d4edda')))
-        style_commands.append(('FONTNAME', (0, grand_total_row_index), (-1, grand_total_row_index), 'Helvetica-Bold'))
-        style_commands.append(('FONTSIZE', (0, grand_total_row_index), (-1, grand_total_row_index), 9))
-
-    t.setStyle(TableStyle(style_commands))
-    elements.append(t)
-
-    doc.build(elements)
-    buffer.seek(0)
-
-    filename = f"RAB_{project_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf"
-    st.download_button(
-        label="⬇️ Download PDF (Rapih & Multi-Level)",
-        data=buffer,
-        file_name=filename,
-        mime="application/pdf",
-        use_container_width=True
-    )
-    st.success("✅ Export PDF sudah lebih rapih dengan warna header hijau, subtotal kuning, dan formatting profesional!")
-
-
 # ==================== TOMBOL EXPORT ====================
 project_name = st.session_state.get("selected_project_name", "Proyek")
 

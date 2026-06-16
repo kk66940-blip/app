@@ -1,26 +1,43 @@
+"""
+scripts/update_password.py
+Reset / update password user dengan hash bcrypt.
+
+Jalankan dari root project:
+    python scripts/update_password.py
+"""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from utils.supabase_client import get_supabase
-import hashlib
+from utils.auth import hash_password
 
-supabase = get_supabase()
+# ── EDIT NILAI INI ──────────────────────────────────────────
+NEW_PASSWORD = "ganti_password_ini"
+USERS_TO_UPDATE = ["admin"]
+# ────────────────────────────────────────────────────────────
 
-# Password baru yang mau kamu pakai
-new_password = "admin123"          # ← GANTI INI KALAU MAU PASSWORD LAIN
 
-new_hash = hashlib.sha256(new_password.encode()).hexdigest()
+def main():
+    if NEW_PASSWORD == "ganti_password_ini":
+        print("⚠️  Ganti dulu nilai NEW_PASSWORD sebelum menjalankan.")
+        return
 
-# Update kedua user sekaligus
-users_to_update = ["admin", "ekur"]
+    supabase = get_supabase()
+    new_hash = hash_password(NEW_PASSWORD)
 
-for username in users_to_update:
-    res = supabase.table("users")\
-        .update({"password": new_hash})\
-        .eq("username", username)\
-        .execute()
-    
-    if res.data:
-        print(f"✅ Password untuk '{username}' berhasil diupdate!")
-    else:
-        print(f"❌ Gagal update '{username}'")
+    for username in USERS_TO_UPDATE:
+        res = (
+            supabase.table("users")
+            .update({"password_hash": new_hash})
+            .eq("username", username)
+            .execute()
+        )
+        status = "✅" if res.data else "❌"
+        print(f"{status} Password '{username}'")
 
-print(f"\n🔑 Hash yang disimpan: {new_hash}")
-print(f"Password yang bisa dipakai: {new_password}")
+
+if __name__ == "__main__":
+    main()

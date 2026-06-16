@@ -1,5 +1,5 @@
 # ==========================================
-# Streamlit App - Requirements
+# RAB & Opname Online - Requirements
 # ==========================================
 
 # Core Framework
@@ -14,7 +14,9 @@ plotly
 
 # Database (Supabase)
 supabase
-st-supabase-connection
 
-# PDF Generation (untuk halaman Opname)
+# PDF Generation
 reportlab
+
+# Password Hashing
+bcrypt

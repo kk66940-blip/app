@@ -23,7 +23,6 @@ rab_items = supabase.table("rab_items")\
 
 # Hitung total RAB hanya dari item leaf (tidak punya child)
 # supaya konsisten dengan export Excel & PDF
-from collections import defaultdict
 children_map = defaultdict(list)
 for item in rab_items:
     children_map[item.get('parent_id')].append(item)
@@ -198,7 +197,6 @@ try:
         .execute().data
 
     if expenses:
-        from collections import defaultdict
         expense_summary = defaultdict(float)
         total_expense = 0
 
@@ -221,4 +219,3 @@ try:
 except Exception as e:
     st.error(f"Gagal memuat data pengeluaran: {e}")
 
-st.success("✅ Dashboard telah diperbarui sesuai permintaan!")

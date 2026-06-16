@@ -279,8 +279,10 @@ def export_hierarchical_pdf(
 
     doc.build(elements)
     buffer.seek(0)
-    
-    # ==================== CONVENIENCE WRAPPERS (UNTUK KOMPATIBILITAS) ====================
+    return buffer
+
+
+# ==================== CONVENIENCE WRAPPERS (UNTUK KOMPATIBILITAS) ====================
 
 def export_rab_excel(items: List[Dict], project_name: str) -> BytesIO:
     """Wrapper khusus untuk halaman RAB"""
@@ -321,5 +323,3 @@ def export_rap_pdf(items: List[Dict], project_name: str) -> BytesIO:
         id_key="rab_item_id",
         parent_key="parent_id"
     )
-    
-    return buffer

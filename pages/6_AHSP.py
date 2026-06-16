@@ -17,7 +17,6 @@ from utils.supabase_client import get_supabase
 
 supabase = get_supabase()
 
-st.set_page_config(page_title="Database AHSP - Full Management", layout="wide")
 st.header("📋 Database AHSP - Full Management")
 st.caption("Level 3 • Kelola Item, Resource, dan Komposisi")
 

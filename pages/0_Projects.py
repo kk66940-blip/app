@@ -5,7 +5,6 @@ from utils.helpers import format_rupiah
 
 supabase = get_supabase()
 
-st.set_page_config(page_title="Manajemen Proyek", layout="wide")
 
 st.header("🏗️ Manajemen Proyek")
 
