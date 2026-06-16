@@ -8,16 +8,24 @@ from collections import defaultdict
 from typing import List, Dict, Any, Callable, Optional
 
 
-def build_tree(items: List[Dict]) -> Dict[Optional[int], List[Dict]]:
-    """Build parent_id → children mapping with sorting."""
+def build_tree(
+    items: List[Dict],
+    id_key: str = "id",
+    parent_key: str = "parent_id",
+) -> Dict[Optional[int], List[Dict]]:
+    """Build parent → children mapping with sorting.
+
+    id_key/parent_key bisa diubah agar mendukung tabel seperti rap_items yang
+    relasi parent-nya memakai rab_item_id, bukan id baris itu sendiri.
+    """
     children_map: Dict[Optional[int], List[Dict]] = defaultdict(list)
     for item in items:
-        children_map[item.get('parent_id')].append(item)
-    
+        children_map[item.get(parent_key)].append(item)
+
     for pid in children_map:
         children_map[pid] = sorted(
-            children_map[pid], 
-            key=lambda x: (x.get('sort_order', 0), x.get('id', 0))
+            children_map[pid],
+            key=lambda x: (x.get('sort_order', 0), x.get(id_key, 0))
         )
     return children_map
 
@@ -28,13 +36,19 @@ def display_hierarchical_tree(
     render_content: Optional[Callable[[Dict], None]] = None,
     expanded_by_default: bool = False,
     search_term: str = "",
-    key_prefix: str = "tree"
+    key_prefix: str = "tree",
+    id_key: str = "id",
+    parent_key: str = "parent_id",
 ) -> None:
     if not items:
         st.info("Tidak ada data untuk ditampilkan.")
         return
 
-    children_map = build_tree(items)
+    children_map = build_tree(items, id_key=id_key, parent_key=parent_key)
+
+    # Root = item yang parent-nya None ATAU menunjuk ke id yang tidak ada di set
+    # ini (mis. RAP yang parent_id-nya mengacu ke rab_item_id non-grup).
+    all_ids = {item.get(id_key) for item in items if item.get(id_key) is not None}
 
     def _default_get_title(item: Dict, level: int) -> str:
         indent = "　" * level * 2
@@ -46,15 +60,17 @@ def display_hierarchical_tree(
 
     title_func = get_title or _default_get_title
 
-    def _render_node(parent_id: Optional[int] = None, level: int = 0):
-        children = children_map.get(parent_id, [])
+    def _render_node(parent_ref: Optional[int] = None, level: int = 0):
+        children = children_map.get(parent_ref, [])
         for item in children:
-            item_id = item['id']
+            node_ref = item.get(id_key)
+            # id stabil untuk widget key (selalu pakai 'id' baris bila ada)
+            widget_id = item.get('id', node_ref)
             title = title_func(item, level)
 
             if search_term:
                 search_lower = search_term.lower().strip()
-                if (search_lower in str(item.get('code', '')).lower() or 
+                if (search_lower in str(item.get('code', '')).lower() or
                     search_lower in str(item.get('description', '')).lower()):
                     title = f"✅ {title}"
 
@@ -62,14 +78,23 @@ def display_hierarchical_tree(
                 if render_content:
                     render_content(item)
                 else:
-                    st.write(f"**ID:** {item_id}")
+                    st.write(f"**ID:** {widget_id}")
                     st.write(f"**Level:** {item.get('level', 0)}")
                     if item.get('volume'):
                         st.write(f"**Volume:** {item['volume']} {item.get('unit', '')}")
 
-                _render_node(item_id, level + 1)
+                _render_node(node_ref, level + 1)
 
-    _render_node()
+    # Render dari None dulu (parent_id null), lalu root "yatim" (parent ref
+    # menunjuk ke id yang tidak ada di set ini).
+    _render_node(None, 0)
+    orphan_parent_refs = {
+        item.get(parent_key)
+        for item in items
+        if item.get(parent_key) is not None and item.get(parent_key) not in all_ids
+    }
+    for pref in orphan_parent_refs:
+        _render_node(pref, 0)
 
 
 def display_rab_tree(

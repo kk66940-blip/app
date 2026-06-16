@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from utils.supabase_client import get_supabase
 from utils.helpers import format_rupiah
 from utils.export_utils import export_hierarchical_excel, export_hierarchical_pdf
-from components.hierarchical_tree import display_hierarchical_tree, build_tree
+from components.hierarchical_tree import display_hierarchical_tree
 
 supabase = get_supabase()
 
@@ -184,9 +184,12 @@ if st.session_state.get("delete_confirm_id"):
             del st.session_state.delete_confirm_id
             st.rerun()
 
-# ==================== ADVANCED TREE RENDERER ====================
-def render_rap_advanced(item: Dict[str, Any]):
-    """Renderer kaya fitur untuk RAP dengan perbandingan & aksi lengkap"""
+# ==================== RENDERER RAP (bentuk seperti RAB) ====================
+def render_rap_content(item: Dict[str, Any]):
+    """Renderer RAP: bentuk metric 3-kolom seperti RAB, info perbandingan di caption.
+
+    Selisih = Rencana - Pelaksanaan (hemat = positif, boros = negatif).
+    """
     vol = item.get("volume", 0) or 0
     planned = item.get("planned_price", 0) or 0
     exec_price = item.get("execution_price", 0) or 0
@@ -195,78 +198,46 @@ def render_rap_advanced(item: Dict[str, Any]):
     total_rencana = vol * planned
     total_pelaksanaan = vol * exec_price
     total_upah = vol * upah
-    selisih = total_pelaksanaan - total_rencana
+    # Selisih = penghematan: positif jika pelaksanaan lebih murah dari rencana.
+    selisih = total_rencana - total_pelaksanaan
     persen_selisih = (selisih / total_rencana * 100) if total_rencana > 0 else 0
 
-    # Header
-    code = item.get("code", "")
-    desc = item.get("description", "")
-    st.markdown(f"**{code}** — {desc}" if code else f"**{desc}**")
-
-    # Metrics
-    c1, c2, c3, c4 = st.columns(4)
+    # Metric utama (3 kolom, selaras dengan RAB)
+    c1, c2, c3 = st.columns(3)
     c1.metric("Volume", f"{vol:,.2f} {item.get('unit', '')}")
-    c2.metric("Harga Rencana", format_rupiah(planned))
-    c3.metric("Harga Pelaksanaan", format_rupiah(exec_price))
-    c4.metric("Selisih", format_rupiah(selisih), delta=f"{persen_selisih:+.1f}%")
+    c2.metric("Harga Pelaksanaan", format_rupiah(exec_price))
+    c3.metric("Total Pelaksanaan", format_rupiah(total_pelaksanaan))
 
-    # Upah & Totals
+    # Info perbandingan RAP di caption (delta positif = hemat)
     st.caption(
-        f"**Total Rencana:** {format_rupiah(total_rencana)} &nbsp;&nbsp;|&nbsp;&nbsp; "
-        f"**Total Pelaksanaan:** {format_rupiah(total_pelaksanaan)} &nbsp;&nbsp;|&nbsp;&nbsp; "
-        f"**Total Upah:** {format_rupiah(total_upah)} &nbsp;&nbsp;|&nbsp;&nbsp; "
-        f"**Selisih:** {format_rupiah(selisih)} ({persen_selisih:+.1f}%)"
+        f"Harga Rencana: {format_rupiah(planned)} &nbsp;|&nbsp; "
+        f"Selisih (hemat): {format_rupiah(selisih)} ({persen_selisih:+.1f}%) &nbsp;|&nbsp; "
+        f"Total Upah: {format_rupiah(total_upah)}"
     )
 
-    # Action Buttons
+    # Tombol aksi
     col_edit, col_del = st.columns(2)
     with col_edit:
-        if st.button("✏️ Edit Harga & Upah", key=f"edit_{item['id']}", use_container_width=True):
+        if st.button("✏️ Edit Harga & Upah", key=f"rap_edit_{item['id']}", use_container_width=True):
             st.session_state.edit_rap_item = item
             st.rerun()
     with col_del:
-        if st.button("🗑️ Hapus", key=f"del_{item['id']}", use_container_width=True):
+        if st.button("🗑️ Hapus", key=f"rap_del_{item['id']}", use_container_width=True):
             st.session_state.delete_confirm_id = item["id"]
             st.rerun()
 
-# ==================== RENDER TREE (FIXED untuk RAP) ====================
-# Karena di tabel rap_items, parent_id mengacu ke rab_item_id (bukan id RAP baru)
-def build_rap_children_map(items: List[Dict]) -> Dict:
-    from collections import defaultdict
-    children_map = defaultdict(list)
-    for item in items:
-        parent = item.get("parent_id")
-        children_map[parent].append(item)
-    
-    # Sort children
-    for pid in children_map:
-        children_map[pid] = sorted(
-            children_map[pid], 
-            key=lambda x: (x.get("sort_order", 0), x.get("id", 0))
-        )
-    return children_map
 
-children_map = build_rap_children_map(filtered_items)
-
-def get_rap_children(parent_rab_id):
-    return children_map.get(parent_rab_id, [])
-
-def render_tree(parent_rab_id: Optional[int] = None, level: int = 0):
-    children = get_rap_children(parent_rab_id)
-    for item in children:
-        with st.expander(f"{'　' * level * 2}▶ {item.get('code', '')} - {item.get('description', '')}", expanded=False):
-            render_rap_advanced(item)
-            # Penting: pakai rab_item_id untuk mencari child berikutnya
-            render_tree(item.get("rab_item_id"), level + 1)
-
-# Root items: parent_id is None atau tidak ada di daftar rab_item_id
-all_rab_ids = {item.get("rab_item_id") for item in filtered_items if item.get("rab_item_id")}
-root_items = [item for item in filtered_items if item.get("parent_id") is None or item.get("parent_id") not in all_rab_ids]
-
-for root in root_items:
-    with st.expander(f"▶ {root.get('code', '')} - {root.get('description', '')}", expanded=False):
-        render_rap_advanced(root)
-        render_tree(root.get("rab_item_id"), level=1)
+# ==================== RENDER TREE (komponen reusable, sama dgn RAB) ====================
+# rap_items memakai rab_item_id sebagai referensi parent, jadi id_key diset
+# ke 'rab_item_id' agar tree terbentuk benar.
+display_hierarchical_tree(
+    items=filtered_items,
+    render_content=render_rap_content,
+    search_term=search_term,
+    key_prefix="rap_page",
+    id_key="rab_item_id",
+    parent_key="parent_id",
+)
 
 # ==================== SUMMARY ====================
 if filtered_items:
@@ -277,13 +248,14 @@ if filtered_items:
     total_rencana = sum((i.get("volume", 0) or 0) * (i.get("planned_price", 0) or 0) for i in filtered_items)
     total_pelaksanaan = sum((i.get("volume", 0) or 0) * (i.get("execution_price", 0) or 0) for i in filtered_items)
     total_upah = sum((i.get("volume", 0) or 0) * (i.get("upah", 0) or 0) for i in filtered_items)
-    total_selisih = total_pelaksanaan - total_rencana
+    # Selisih = penghematan (Rencana - Pelaksanaan)
+    total_selisih = total_rencana - total_pelaksanaan
 
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Total Volume", f"{total_vol:,.2f}")
     c2.metric("Total Rencana", format_rupiah(total_rencana))
     c3.metric("Total Pelaksanaan", format_rupiah(total_pelaksanaan))
     c4.metric("Total Upah", format_rupiah(total_upah))
-    c5.metric("Total Selisih", format_rupiah(total_selisih), delta=f"{(total_selisih/total_rencana*100):+.1f}%" if total_rencana > 0 else None)
+    c5.metric("Total Selisih (hemat)", format_rupiah(total_selisih), delta=f"{(total_selisih/total_rencana*100):+.1f}%" if total_rencana > 0 else None)
 
 st.caption("Versi Advanced — dengan perbandingan per item & fitur hapus lengkap")
