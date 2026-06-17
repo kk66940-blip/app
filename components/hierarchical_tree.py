@@ -212,7 +212,8 @@ def display_opname_tree(
     ----------
     items           : Daftar RAB items (parent dan leaf) dari Supabase.
     actual_map      : {rab_item_id: actual_volume} dari opname_details.
-    on_save         : Callback fn(item, new_volume, uploaded_file) untuk simpan.
+    on_save         : Callback fn(item, new_volume, uploaded_file, new_kasbon)
+                      untuk simpan. new_kasbon hanya relevan untuk Opname Sub.
     show_photo_upload: Tampilkan widget upload foto (Opname utama).
     rap_price_map   : {rab_item_id: execution_price} untuk Opname Sub.
                       Jika None, digunakan unit_price dari RAB.

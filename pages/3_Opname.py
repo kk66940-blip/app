@@ -102,7 +102,10 @@ def generate_invoice_pdf(period_id, period_label, kasbon_value):
                                      textColor=colors.HexColor('#0d6efd'))
 
         elements = []
-        elements.append(Paragraph("🧾 INVOICE OPNAME", title_style))
+        from utils.company import get_company_settings, build_letterhead, build_bank_footer
+        _company = get_company_settings()
+        build_letterhead(elements, _company, styles)
+        elements.append(Paragraph("INVOICE OPNAME", title_style))
         elements.append(Paragraph(f"<b>Proyek:</b> {project_name}", normal))
         elements.append(Paragraph(f"<b>Periode:</b> {period_label}", normal))
         elements.append(Paragraph(f"<b>Tanggal:</b> {datetime.now().strftime('%d %B %Y')}", normal))
@@ -144,6 +147,8 @@ def generate_invoice_pdf(period_id, period_label, kasbon_value):
         elements.append(summary_table)
 
         elements.append(Spacer(1, 0.8*cm))
+        build_bank_footer(elements, _company, styles)
+        elements.append(Spacer(1, 0.6*cm))
         elements.append(Paragraph("Hormat kami,", normal))
         elements.append(Spacer(1, 1.2*cm))
         elements.append(Paragraph("_________________________", normal))

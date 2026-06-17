@@ -101,7 +101,14 @@ rap_items = get_rap_items(project_id)
 col1, col2 = st.columns(2)
 with col1:
     if st.button("📊 Export Excel", type="primary", use_container_width=True) and rap_items:
-        buffer = export_hierarchical_excel(rap_items, project_name, "RENCANA ANGGARAN PELAKSANAAN (RAP)", "RAP")
+        def get_total_xls(item):
+            return (item.get("volume", 0) or 0) * (item.get("execution_price", 0) or 0)
+        buffer = export_hierarchical_excel(
+            rap_items, project_name,
+            "RENCANA ANGGARAN PELAKSANAAN (RAP)", "RAP",
+            get_total_func=get_total_xls,
+            id_key="rab_item_id", parent_key="parent_id",
+        )
         st.download_button("Download Excel", buffer, f"RAP_{project_name}.xlsx")
 
 with col2:

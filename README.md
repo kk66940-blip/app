@@ -103,9 +103,24 @@ Yang **sudah** diperbaiki dan terverifikasi (lolos `py_compile`):
 - **Koneksi Supabase** sekarang di-cache (`@st.cache_resource`).
 - **SPK number** auto-increment (sebelumnya hardcoded `/001` → bentrok).
 
+Perbaikan pada audit lanjutan:
+
+- **Import RAB di Laporan** tidak lagi menelan error diam-diam (`except: pass`);
+  baris yang gagal kini dilaporkan ke user.
+- **Export Excel RAP** sebelumnya flat (tidak berhirarki) karena tidak meneruskan
+  `id_key="rab_item_id"`; sudah diperbaiki agar konsisten dengan export PDF RAP.
+
 Yang **BELUM** dikerjakan / perlu perhatianmu:
 
 - [ ] Migrasi ke Supabase Auth + RLS (lihat Catatan Keamanan di atas).
+- [ ] **KANDIDAT BUG-DIAM (perlu cek vs schema):** kode opname mengasumsikan
+  `opname_details.rab_item_id == rab_items.id`. Bila tidak, volume opname tak
+  akan muncul. Verifikasi terhadap schema-mu.
+- [ ] **KANDIDAT BUG-DIAM:** modul AHSP bergantung pada RPC `calculate_ahsp_unit_price`,
+  `update_ahsp_unit_price`, `get_ahsp_price_breakdown` (param `p_ahsp_item_id`)
+  dan view `v_ahsp_items`. Jika tidak ada / beda nama param di DB, modul AHSP gagal.
+- [ ] Import RAB lewat Laporan selalu set `parent_id=None` → hasil import flat
+  (tanpa hirarki). Perlu disatukan dengan logika import berhirarki di 2_RAB.py.
 - [ ] Heuristik "Main Item" masih rapuh:
   `volume == 0 and "pekerjaan" in description.lower()`. Disarankan menambah
   kolom boolean `is_main_item` di DB agar konsisten. Butuh perubahan skema.

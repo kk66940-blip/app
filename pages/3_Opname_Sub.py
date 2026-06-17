@@ -23,7 +23,12 @@ project_name = st.session_state.get("selected_project_name", "Proyek")
 
 
 # ==================== FUNGSI INVOICE OPNAME SUB ====================
-def generate_invoice_sub_pdf(period_id, period_label, kasbon_value):
+def generate_invoice_sub_pdf(period_id, period_label, kasbon_value, selected_child_ids=None):
+    """Buat PDF Invoice Opname Sub.
+
+    selected_child_ids : set/list id child (rab_items.id) yang akan dimasukkan ke
+        invoice. Jika None, semua child dengan volume > 0 dimasukkan (perilaku lama).
+    """
     try:
         project_res = supabase.table("projects").select("*").eq("id", project_id).execute()
         project = project_res.data[0] if project_res.data else {}
@@ -49,13 +54,21 @@ def generate_invoice_sub_pdf(period_id, period_label, kasbon_value):
         for item in rab_items:
             children_map[item.get('parent_id')].append(item)
 
-        main_items = [item for item in rab_items 
-                      if (item.get('level', 0) == 0 or 
+        def _child_included(cid):
+            """Child masuk invoice jika volume > 0 dan (tak ada filter atau terpilih)."""
+            if (actual_map.get(cid, 0) or 0) <= 0:
+                return False
+            if selected_child_ids is None:
+                return True
+            return cid in selected_child_ids
+
+        main_items = [item for item in rab_items
+                      if (item.get('level', 0) == 0 or
                           (item.get('volume', 0) == 0 and "pekerjaan" in item.get('description', '').lower()))
-                      and any(actual_map.get(child['id'], 0) > 0 for child in children_map.get(item['id'], []))]
+                      and any(_child_included(child['id']) for child in children_map.get(item['id'], []))]
 
         if not main_items:
-            st.warning("Tidak ada data Opname Sub di periode ini.")
+            st.warning("Tidak ada item terpilih untuk dibuat invoice di periode ini.")
             return
 
         subtotal = 0
@@ -68,7 +81,7 @@ def generate_invoice_sub_pdf(period_id, period_label, kasbon_value):
             table_data.append(["", f"▶ {main_item.get('description', '')}", "", "", "", "", ""])
 
             for child in children_map.get(main_id, []):
-                if actual_map.get(child['id'], 0) > 0:
+                if _child_included(child['id']):
                     vol = actual_map[child['id']]
                     price = rap_price_map.get(child['id'], 0)
                     nilai = vol * price
@@ -107,7 +120,10 @@ def generate_invoice_sub_pdf(period_id, period_label, kasbon_value):
         title_style = ParagraphStyle('Title', parent=styles['Normal'], fontSize=14, fontName='Helvetica-Bold', textColor=colors.HexColor('#2E7D32'))
 
         elements = []
-        elements.append(Paragraph("🧾 INVOICE OPNAME SUB (HARGA RAP)", title_style))
+        from utils.company import get_company_settings, build_letterhead, build_bank_footer
+        _company = get_company_settings()
+        build_letterhead(elements, _company, styles)
+        elements.append(Paragraph("INVOICE OPNAME SUB (HARGA RAP)", title_style))
         elements.append(Paragraph(f"<b>Proyek:</b> {project_name}", normal))
         elements.append(Paragraph(f"<b>Periode:</b> {period_label}", normal))
         elements.append(Paragraph(f"<b>Tanggal:</b> {datetime.now().strftime('%d %B %Y')}", normal))
@@ -156,6 +172,7 @@ def generate_invoice_sub_pdf(period_id, period_label, kasbon_value):
 
         elements.append(Spacer(1, 1*cm))
         elements.append(Paragraph("Mohon transfer ke rekening kami.", normal))
+        build_bank_footer(elements, _company, styles)
         elements.append(Spacer(1, 0.5*cm))
         elements.append(Paragraph("Hormat kami,", normal))
         elements.append(Spacer(1, 1.5*cm))
@@ -239,7 +256,7 @@ with col_a:
 with col_b:
     if st.button("🧾 Buat Invoice Sub", type="primary", use_container_width=True):
         if current_period_id:
-            generate_invoice_sub_pdf(current_period_id, selected_label, kasbon)
+            st.session_state.show_invoice_sub_picker = True
         else:
             st.warning("Pilih periode terlebih dahulu")
 with col_c:
@@ -272,6 +289,102 @@ opname_sub_details = supabase.table("opname_sub_details")\
 actual_map = {d['rab_item_id']: d['volume_actual'] for d in opname_sub_details}
 kasbon_map = {d['rab_item_id']: (d.get('kasbon_amount') or 0) for d in opname_sub_details}
 rap_price_map = {r['rab_item_id']: r.get('execution_price', 0) for r in rap_items}
+
+# ==================== PANEL PEMILIHAN ITEM INVOICE ====================
+# Fallback aman: kasbon didefinisikan di col3 hanya bila ada periode; pastikan ada.
+try:
+    kasbon
+except NameError:
+    kasbon = 0
+if st.session_state.get("show_invoice_sub_picker"):
+    _children_map = defaultdict(list)
+    for _it in rab_items:
+        _children_map[_it.get('parent_id')].append(_it)
+
+    # Item utama yang punya minimal satu child dengan volume > 0
+    _mains = [it for it in rab_items
+              if (it.get('level', 0) == 0 or
+                  (it.get('volume', 0) == 0 and "pekerjaan" in it.get('description', '').lower()))
+              and any((actual_map.get(c['id'], 0) or 0) > 0 for c in _children_map.get(it['id'], []))]
+
+    # Kumpulan id child yang berhak masuk (volume > 0)
+    _eligible = [
+        (m, [c for c in _children_map.get(m['id'], []) if (actual_map.get(c['id'], 0) or 0) > 0])
+        for m in _mains
+    ]
+
+    with st.container(border=True):
+        st.markdown("### 🧾 Pilih item untuk Invoice Sub")
+        if not _eligible:
+            st.warning("Tidak ada item dengan volume opname di periode ini.")
+            if st.button("Tutup", key="inv_close_empty"):
+                st.session_state.show_invoice_sub_picker = False
+                st.rerun()
+            st.stop()
+
+        # Inisialisasi default: semua tercentang
+        all_child_ids = [c['id'] for _, kids in _eligible for c in kids]
+        if "inv_sub_sel" not in st.session_state:
+            st.session_state.inv_sub_sel = set(all_child_ids)
+
+        bcol1, bcol2, _ = st.columns([1, 1, 3])
+        if bcol1.button("✅ Pilih Semua", key="inv_all", use_container_width=True):
+            st.session_state.inv_sub_sel = set(all_child_ids)
+            st.rerun()
+        if bcol2.button("⬜ Kosongkan", key="inv_none", use_container_width=True):
+            st.session_state.inv_sub_sel = set()
+            st.rerun()
+
+        sel = st.session_state.inv_sub_sel
+
+        for main, kids in _eligible:
+            kid_ids = [c['id'] for c in kids]
+            all_on = all(cid in sel for cid in kid_ids)
+            # Checkbox induk: mengubahnya men-set/clear semua child
+            main_checked = st.checkbox(
+                f"**▶ {main.get('description', '')}**",
+                value=all_on, key=f"inv_main_{main['id']}",
+            )
+            if main_checked and not all_on:
+                sel.update(kid_ids); st.rerun()
+            elif not main_checked and all_on:
+                sel.difference_update(kid_ids); st.rerun()
+
+            # Child di dalam expander
+            with st.expander(f"Detail ({len(kids)} item)", expanded=False):
+                for c in kids:
+                    cid = c['id']
+                    vol = actual_map.get(cid, 0) or 0
+                    price = rap_price_map.get(cid, 0) or 0
+                    nilai = vol * price
+                    child_on = st.checkbox(
+                        f"{c.get('description', '')} — {vol:,.2f} {c.get('unit','')} × "
+                        f"{format_rupiah(price)} = {format_rupiah(nilai)}",
+                        value=(cid in sel), key=f"inv_child_{cid}",
+                    )
+                    if child_on:
+                        sel.add(cid)
+                    else:
+                        sel.discard(cid)
+
+        st.divider()
+        n_sel = len(sel)
+        total_sel = sum((actual_map.get(cid, 0) or 0) * (rap_price_map.get(cid, 0) or 0) for cid in sel)
+        st.caption(f"**{n_sel} item terpilih** — Subtotal: {format_rupiah(total_sel)}")
+
+        gcol1, gcol2 = st.columns([1, 1])
+        with gcol1:
+            if st.button("📄 Generate PDF", type="primary", use_container_width=True, key="inv_gen"):
+                if n_sel == 0:
+                    st.warning("Pilih minimal satu item.")
+                else:
+                    generate_invoice_sub_pdf(current_period_id, selected_label, kasbon, set(sel))
+        with gcol2:
+            if st.button("Batal", use_container_width=True, key="inv_cancel"):
+                st.session_state.show_invoice_sub_picker = False
+                st.rerun()
+
+
 
 def handle_save_opname_sub(item, new_actual, uploaded_file, new_kasbon=0):
     """Callback untuk Opname Sub — simpan volume + kasbon per item"""

@@ -190,7 +190,8 @@ if uploaded_file:
             st.stop()
 
         success_count = 0
-        for _, row in df.iterrows():
+        failed_rows = []
+        for idx, (_, row) in enumerate(df.iterrows()):
             try:
                 data = {
                     "project_id": project_id,
@@ -205,14 +206,25 @@ if uploaded_file:
                 }
                 supabase.table("rab_items").insert(data).execute()
                 success_count += 1
-            except:
-                pass
+            except Exception as row_err:
+                # Jangan telan diam-diam: kumpulkan baris yang gagal agar user tahu.
+                failed_rows.append((idx + 1, str(row_err)))
 
         if success_count > 0:
             st.success(f"✅ Berhasil import {success_count} item dari Excel!")
+            if failed_rows:
+                st.warning(
+                    f"⚠️ {len(failed_rows)} baris gagal diimport. "
+                    "Periksa kolom/tipe data baris berikut:"
+                )
+                for rownum, err in failed_rows[:10]:
+                    st.caption(f"Baris {rownum}: {err}")
             st.rerun()
         else:
             st.error("❌ Tidak ada data yang berhasil diimport")
+            if failed_rows:
+                for rownum, err in failed_rows[:10]:
+                    st.caption(f"Baris {rownum}: {err}")
     except Exception as e:
         st.error(f"❌ Error: {str(e)}")
 

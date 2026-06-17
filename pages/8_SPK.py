@@ -28,6 +28,10 @@ def generate_spk_pdf(spk_data, rap_items_list):
         title_style = ParagraphStyle('Title', parent=styles['Normal'], fontSize=16, fontName='Helvetica-Bold', textColor=colors.HexColor('#0d6efd'))
         subtitle_style = ParagraphStyle('Subtitle', parent=styles['Normal'], fontSize=11, fontName='Helvetica-Bold')
         elements = []
+        # Kop surat perusahaan
+        from utils.company import get_company_settings, build_letterhead
+        _company = get_company_settings()
+        build_letterhead(elements, _company, styles)
         elements.append(Paragraph("SURAT PERINTAH KERJA (SPK)", title_style))
         elements.append(Spacer(1, 0.3*cm))
         elements.append(Paragraph(f"<b>Nomor SPK:</b> {spk_data['spk_no']}", normal))
