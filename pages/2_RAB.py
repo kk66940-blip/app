@@ -6,6 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from utils.supabase_client import get_supabase
+from utils.helpers import next_rab_code
 from datetime import datetime
 
 from utils.ahsp_helper import get_ahsp_for_selection
@@ -67,8 +68,23 @@ with st.expander("➕ Tambah Item BARU", expanded=False):
         level = st.selectbox("Level", [0, 1, 2, 3], index=0)
         parent_options = ["Tidak ada (Main Item)"] + [f"{item['code']} - {item['description'][:40]}" for item in all_rab_items if item.get('level') == level-1]
         parent_choice = st.selectbox("Parent Item", parent_options)
+
+    # Tentukan parent_id dari pilihan, untuk menghitung kode otomatis
+    _parent_id_for_code = None
+    if parent_choice != "Tidak ada (Main Item)":
+        _pcode = parent_choice.split(" - ")[0]
+        _p = next((it for it in all_rab_items if it.get('code') == _pcode), None)
+        if _p:
+            _parent_id_for_code = _p['id']
+
+    _auto_code = next_rab_code(all_rab_items, _parent_id_for_code, level)
+
     with col2:
-        code = st.text_input("Kode Item", value="A.1")
+        code = st.text_input(
+            "Kode Item (otomatis, bisa diubah)", value=_auto_code,
+            key=f"rab_code_{level}_{_parent_id_for_code}",
+            help="Kode dibuat otomatis melanjutkan urutan. Ubah hanya bila perlu.",
+        )
         description = st.text_input("Uraian Pekerjaan", value="Pekerjaan ...")
     
     col_a, col_b, col_c = st.columns(3)

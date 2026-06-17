@@ -188,6 +188,12 @@ def export_hierarchical_pdf(
     normal = ParagraphStyle('Normal', parent=styles['Normal'], fontSize=8, leading=10)
 
     elements = []
+    # Kop surat perusahaan (gagal-aman bila helper/data tak tersedia).
+    try:
+        from utils.company import get_company_settings, build_letterhead
+        build_letterhead(elements, get_company_settings(), styles)
+    except Exception:
+        pass
     elements.append(Paragraph(f"<b>{title}</b>", ParagraphStyle('Title', fontSize=14, fontName='Helvetica-Bold', textColor=colors.HexColor('#0d6efd'))))
     elements.append(Paragraph(f"<b>Proyek:</b> {project_name}", normal))
     elements.append(Paragraph(f"<b>Tanggal:</b> {datetime.now().strftime('%d %B %Y')}", normal))

@@ -8,17 +8,22 @@ bukan per-proyek. Pola: ambil baris pertama; jika belum ada, kembalikan default.
 """
 
 from io import BytesIO
+from pathlib import Path
 
 from utils.supabase_client import get_supabase
 
-# Default aman bila tabel belum diisi.
+# Path logo bawaan yang dibundel di app (assets/logo_kmu.png).
+_BUNDLED_LOGO = str(Path(__file__).resolve().parent.parent / "assets" / "logo_kmu.png")
+
+# Default aman bila tabel belum diisi (diisi data CV Kreasindo Mandiri Utama).
 _DEFAULTS = {
-    "company_name": "PT. Konstruksi Indonesia",
-    "address": "",
-    "phone": "",
-    "email": "",
+    "company_name": "CV KREASINDO MANDIRI UTAMA",
+    "address": "JL KOPO SUKALEEUR NO 9 RT03/02, KEL. BABAKAN ASIH, "
+               "KEC. BOJONGLOA KALER, KOTA BANDUNG",
+    "phone": "+62 823 4346 2021",
+    "email": "kreasindomandiriutama.25@gmail.com",
     "npwp": "",
-    "logo_path": "",
+    "logo_path": _BUNDLED_LOGO,
     "footer": "",
     "bank_name": "",
     "account_number": "",
@@ -54,21 +59,30 @@ def save_company_settings(data: dict) -> bool:
 
 
 def _try_load_logo(logo_path: str):
-    """Coba muat logo dari URL untuk reportlab Image. Kembalikan Image atau None.
+    """Coba muat logo (dari URL ATAU file lokal) untuk reportlab Image.
 
-    Aman gagal: jika path kosong, bukan URL, atau gagal diunduh, kembalikan None
-    agar PDF tetap dibuat tanpa logo (tidak merusak dokumen).
+    Kembalikan Image atau None. Aman gagal: jika path kosong/tidak valid/gagal
+    dimuat, kembalikan None agar PDF tetap dibuat tanpa logo.
     """
-    if not logo_path or not str(logo_path).startswith(("http://", "https://")):
+    if not logo_path:
         return None
     try:
-        import urllib.request
         from reportlab.platypus import Image
         from reportlab.lib.units import cm
 
-        with urllib.request.urlopen(logo_path, timeout=5) as resp:
-            data = resp.read()
-        img = Image(BytesIO(data))
+        path_str = str(logo_path)
+        if path_str.startswith(("http://", "https://")):
+            import urllib.request
+            with urllib.request.urlopen(path_str, timeout=5) as resp:
+                src = BytesIO(resp.read())
+        else:
+            # File lokal (mis. logo bundel di assets/)
+            import os
+            if not os.path.exists(path_str):
+                return None
+            src = path_str
+
+        img = Image(src)
         # Skala ke tinggi maksimal ~1.8cm menjaga rasio.
         max_h = 1.8 * cm
         if img.imageHeight > 0:
