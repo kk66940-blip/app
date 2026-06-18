@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from utils.supabase_client import get_supabase
-from utils.helpers import next_rab_code, VOLUME_CALC_TYPES, calc_total_volume
+from utils.helpers import next_rab_code, VOLUME_CALC_TYPES, calc_total_volume, format_rupiah
 from datetime import datetime
 
 from utils.ahsp_helper import get_ahsp_for_selection
@@ -245,6 +245,117 @@ with st.expander("➕ Tambah Item dari Database AHSP", expanded=False):
 
                 except Exception as e:
                     st.error(f"Gagal menyimpan: {str(e)}")
+
+# ==================== GENERATE DARI AHSP (AUTO MATERIAL) ====================
+with st.expander("🧱 Generate Item + Material Otomatis dari AHSP", expanded=False):
+    st.caption(
+        "Pilih item AHSP (mis. Beton Sloof) dan masukkan kubikasi. Sistem otomatis "
+        "membuat item induk + rincian material (beton, besi, bekisting, dst) sebagai "
+        "sub-item, dengan volume = koefisien × kubikasi. Upah & alat digabung jadi "
+        "baris 'Jasa'."
+    )
+    from utils.ahsp_helper import explode_ahsp_to_rab, get_item_composition
+
+    ahsp_items_x = get_ahsp_for_selection()
+    if not ahsp_items_x:
+        st.warning("Database AHSP kosong. Definisikan item + komposisinya di halaman AHSP dulu.")
+    else:
+        opt_x = {f"{it['code']} - {it['description'][:65]} ({it.get('unit','-')})": it
+                 for it in ahsp_items_x}
+        sel_label_x = st.selectbox("Pilih Item AHSP", list(opt_x.keys()), key="ahsp_explode_sel")
+        sel_x = opt_x[sel_label_x]
+
+        # Pratinjau komposisi yang akan dipecah
+        comp_preview = get_item_composition(sel_x["id"])
+        n_mat = sum(1 for c in comp_preview if (c.get("ahsp_resources") or {}).get("resource_type") == "material")
+        n_jasa = sum(1 for c in comp_preview if (c.get("ahsp_resources") or {}).get("resource_type") in ("labor", "equipment"))
+        if not comp_preview:
+            st.warning("⚠️ Item AHSP ini belum punya komposisi resource. Isi dulu di halaman AHSP, "
+                       "kalau tidak tidak ada material yang bisa dibuat.")
+        else:
+            st.caption(f"Akan dibuat: **{n_mat} material** + "
+                       f"{'1 baris Jasa (upah & alat)' if n_jasa else 'tanpa jasa'}.")
+
+        cx1, cx2 = st.columns(2)
+        with cx1:
+            kubikasi_x = st.number_input("Kubikasi / Volume induk", min_value=0.0, value=1.0, step=0.01, key="ahsp_explode_vol")
+            level_x = st.selectbox("Level induk", [0, 1, 2], index=0, key="ahsp_explode_level")
+        with cx2:
+            parent_opts_x = ["Tidak ada (Main Item)"] + [
+                f"{it['code']} - {it['description'][:40]}"
+                for it in all_rab_items if it.get('level') == level_x - 1
+            ]
+            parent_choice_x = st.selectbox("Parent induk", parent_opts_x, key="ahsp_explode_parent")
+
+        # Pratinjau hasil sebelum simpan
+        if comp_preview and kubikasi_x > 0:
+            preview = explode_ahsp_to_rab(sel_x, kubikasi_x)
+            rows_prev = [{"Material": c["description"],
+                          "Volume": f"{c['volume']:,.2f} {c['unit']}",
+                          "Harga Satuan": format_rupiah(c["unit_price"]),
+                          "Jumlah": format_rupiah(c["volume"] * c["unit_price"])}
+                         for c in preview["children"]]
+            if rows_prev:
+                st.markdown("**Pratinjau sub-item yang akan dibuat:**")
+                st.table(rows_prev)
+                _tot = sum(c["volume"] * c["unit_price"] for c in preview["children"])
+                st.caption(f"Total (= nilai induk): **{format_rupiah(_tot)}**")
+
+        if st.button("🧱 Generate ke RAB", type="primary", use_container_width=True, key="ahsp_explode_btn"):
+            if not comp_preview:
+                st.error("Item AHSP belum punya komposisi. Tidak ada yang bisa dibuat.")
+            elif kubikasi_x <= 0:
+                st.error("Masukkan kubikasi/volume lebih dari 0.")
+            else:
+                try:
+                    parent_id_x = None
+                    if parent_choice_x != "Tidak ada (Main Item)":
+                        pc = parent_choice_x.split(" - ")[0]
+                        p = next((it for it in all_rab_items if it['code'] == pc), None)
+                        if p:
+                            parent_id_x = p['id']
+
+                    exploded = explode_ahsp_to_rab(sel_x, kubikasi_x)
+                    # 1) Buat induk
+                    parent_code_x = next_rab_code(all_rab_items, parent_id_x, level_x)
+                    parent_row = {
+                        "project_id": project_id,
+                        "code": parent_code_x,
+                        "description": exploded["parent"]["description"],
+                        "volume": 0, "unit": exploded["parent"]["unit"],
+                        "unit_price": 0,  # nilai induk = penjumlahan child
+                        "level": level_x, "parent_id": parent_id_x, "sort_order": 1,
+                    }
+                    ins = supabase.table("rab_items").insert(parent_row).execute()
+                    new_parent_id = ins.data[0]["id"] if ins.data else None
+
+                    # 2) Buat child material + jasa di bawah induk
+                    if new_parent_id:
+                        # ambil ulang daftar item utk penomoran child yang benar
+                        cur_items = supabase.table("rab_items").select("id, code, parent_id").eq(
+                            "project_id", project_id).execute().data or []
+                        for i, child in enumerate(exploded["children"], 1):
+                            child_code = next_rab_code(cur_items, new_parent_id, level_x + 1)
+                            child_row = {
+                                "project_id": project_id,
+                                "code": child_code,
+                                "description": child["description"],
+                                "volume": child["volume"],
+                                "unit": child["unit"],
+                                "unit_price": child["unit_price"],
+                                "level": level_x + 1,
+                                "parent_id": new_parent_id,
+                                "sort_order": i,
+                            }
+                            r = supabase.table("rab_items").insert(child_row).execute()
+                            if r.data:
+                                cur_items.append({"id": r.data[0]["id"], "code": child_code, "parent_id": new_parent_id})
+
+                    st.success(f"✅ '{exploded['parent']['description']}' + "
+                               f"{len(exploded['children'])} sub-item berhasil dibuat!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Gagal generate: {e}")
 
 st.divider()
 
