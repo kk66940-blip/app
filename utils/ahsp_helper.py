@@ -150,3 +150,61 @@ def get_price_breakdown(ahsp_item_id: int) -> Dict[str, float]:
     except Exception as e:
         print(f"Error get_price_breakdown: {e}")
         return {"material_cost": 0, "labor_cost": 0, "equipment_cost": 0, "total_cost": 0}
+
+
+# ==================== EXPLODE AHSP -> ITEM RAB + CHILD ====================
+def explode_ahsp_to_rab(ahsp_item: Dict, kubikasi: float) -> Dict:
+    """Pecah satu item AHSP menjadi struktur induk + child untuk RAB.
+
+    - Induk: volume 0, harga 0 (nilainya = penjumlahan child, hindari dobel-hitung).
+    - Tiap resource 'material' -> child: volume = koefisien * kubikasi,
+      harga satuan = current_price resource.
+    - Semua 'labor' + 'equipment' -> digabung 1 child "Jasa (Upah & Alat)":
+      volume = 1, harga = Σ(koefisien * current_price) * kubikasi.
+
+    Mengembalikan dict:
+      { "parent": {description, unit, ...}, "children": [ {description, unit, volume, unit_price, resource_type}, ... ] }
+
+    Aman: bila item tak punya komposisi, children = [] (pemanggil bisa menangani).
+    """
+    ahsp_id = ahsp_item.get("id")
+    comp = get_item_composition(ahsp_id) if ahsp_id else []
+
+    children = []
+    jasa_total_per_unit = 0.0  # Σ(koef * harga) untuk labor+equipment, per 1 unit induk
+
+    for c in comp:
+        res = c.get("ahsp_resources") or {}
+        rtype = res.get("resource_type")
+        coeff = float(c.get("coefficient") or 0)
+        price = float(res.get("current_price") or 0)
+        name = res.get("name", "")
+        unit = res.get("unit", "")
+
+        if rtype == "material":
+            children.append({
+                "description": name,
+                "unit": unit,
+                "volume": round(coeff * kubikasi, 4),
+                "unit_price": price,
+                "resource_type": "material",
+            })
+        else:  # labor / equipment -> dikumpulkan jadi Jasa
+            jasa_total_per_unit += coeff * price
+
+    if jasa_total_per_unit > 0:
+        children.append({
+            "description": "Jasa (Upah & Alat)",
+            "unit": "ls",
+            "volume": 1.0,
+            "unit_price": round(jasa_total_per_unit * kubikasi, 2),
+            "resource_type": "jasa",
+        })
+
+    parent = {
+        "description": ahsp_item.get("description", ""),
+        "unit": ahsp_item.get("unit", ""),
+        "volume": 0,        # induk tidak bernilai sendiri
+        "unit_price": 0,    # nilai = penjumlahan child
+    }
+    return {"parent": parent, "children": children}
