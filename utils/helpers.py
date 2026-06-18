@@ -166,3 +166,104 @@ def compute_rab_weights(items: list) -> dict:
             weights[it.get("id")] = (_val(it) / grand * 100.0) if _is_leaf(it) else 0.0
 
     return weights
+
+
+# ==================== KURVA-S (PROGRES RENCANA vs REALISASI) ====================
+def compute_scurve_actual(rab_items: list, periods: list, opname_by_period: dict) -> list:
+    """Hitung realisasi KUMULATIF (%) per periode opname, berbasis NILAI.
+
+    Opname disimpan per-periode (increment), jadi progres kumulatif pada periode
+    ke-N = jumlah nilai opname periode 1..N. Progres nilai item =
+    volume × harga; dibagi grand total RAB × 100.
+    """
+    price_map = {it.get("id"): (it.get("unit_price", 0) or 0) for it in rab_items}
+    grand = sum((it.get("volume", 0) or 0) * (it.get("unit_price", 0) or 0) for it in rab_items)
+
+    out = []
+    if grand <= 0:
+        return out
+
+    periods_sorted = sorted(periods, key=lambda p: (p.get("period_no") or 0, p.get("opname_date") or ""))
+
+    cumulative_nilai = 0.0
+    for p in periods_sorted:
+        pid = p.get("id")
+        vols = opname_by_period.get(pid, {})
+        nilai_periode = sum((vols.get(iid, 0) or 0) * price_map.get(iid, 0) for iid in vols)
+        cumulative_nilai += nilai_periode
+        pct = cumulative_nilai / grand * 100.0
+        out.append({
+            "date": p.get("opname_date"),
+            "period_no": p.get("period_no"),
+            "actual_pct": round(pct, 2),
+        })
+    return out
+
+
+def compute_scurve_plan_linear(start_date, end_date, n_points: int = 12) -> list:
+    """Garis rencana LINEAR 0%→100% antara start_date dan end_date.
+
+    Mengembalikan list {"date", "plan_pct"}. n_points titik merata.
+    Catatan: ini baseline disederhanakan (garis lurus), bukan jadwal nyata.
+    """
+    from datetime import date, datetime, timedelta
+
+    def _to_date(d):
+        if isinstance(d, date):
+            return d
+        if isinstance(d, str):
+            for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y"):
+                try:
+                    return datetime.strptime(d[:10], fmt).date()
+                except ValueError:
+                    continue
+        return None
+
+    s, e = _to_date(start_date), _to_date(end_date)
+    if not s or not e or e <= s:
+        return []
+
+    total_days = (e - s).days
+    out = []
+    for i in range(n_points + 1):
+        frac = i / n_points
+        d = s + timedelta(days=round(total_days * frac))
+        out.append({"date": d.isoformat(), "plan_pct": round(frac * 100.0, 2)})
+    return out
+
+
+def compute_rab_totals(items: list) -> dict:
+    """Hitung total tiap item RAB dengan rollup.
+
+    Item DAUN: total = volume * unit_price.
+    Item GRUP (punya anak): total = jumlah total anak-anaknya (rekursif).
+
+    Mengembalikan dict {item_id: total_rupiah}.
+    """
+    children = {}
+    for it in items:
+        children.setdefault(it.get("parent_id"), []).append(it)
+
+    totals = {}
+
+    def _calc(it):
+        iid = it.get("id")
+        kids = children.get(iid, [])
+        if not kids:
+            t = (it.get("volume", 0) or 0) * (it.get("unit_price", 0) or 0)
+        else:
+            t = sum(_calc(c) for c in kids)
+        totals[iid] = t
+        return t
+
+    for root in children.get(None, []):
+        _calc(root)
+
+    # Item yatim (parent tak dikenal) tetap dapat entry
+    for it in items:
+        if it.get("id") not in totals:
+            kids = children.get(it.get("id"), [])
+            totals[it.get("id")] = sum(_calc(c) for c in kids) if kids else \
+                (it.get("volume", 0) or 0) * (it.get("unit_price", 0) or 0)
+
+    return totals

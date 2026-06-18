@@ -371,9 +371,10 @@ def handle_rab_delete(item):
     st.rerun()
 
 if filtered_items:
-    # Bobot dihitung terhadap grand total SELURUH item RAB (bukan hasil filter)
-    from utils.helpers import compute_rab_weights
+    # Bobot & total rollup dihitung dari SELURUH item RAB (bukan hasil filter)
+    from utils.helpers import compute_rab_weights, compute_rab_totals
     rab_weights = compute_rab_weights(all_rab_items)
+    rab_totals = compute_rab_totals(all_rab_items)
     display_rab_tree(
         items=filtered_items,
         on_edit=handle_rab_edit,
@@ -381,6 +382,7 @@ if filtered_items:
         search_term=search_term,
         key_prefix="rab_page",
         weights=rab_weights,
+        totals=rab_totals,
     )
 else:
     if search_term:

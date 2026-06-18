@@ -290,6 +290,24 @@ actual_map = {d['rab_item_id']: d['volume_actual'] for d in opname_sub_details}
 kasbon_map = {d['rab_item_id']: (d.get('kasbon_amount') or 0) for d in opname_sub_details}
 rap_price_map = {r['rab_item_id']: r.get('execution_price', 0) for r in rap_items}
 
+# Total opname sub dari periode SEBELUM periode aktif (untuk hitung sisa).
+prev_opname_map = {}
+try:
+    _all_periods_s = supabase.table("opname_periods").select("id, period_no").eq(
+        "project_id", project_id).execute().data or []
+    _cur_s = next((p for p in _all_periods_s if p["id"] == current_period_id), None)
+    _cur_no_s = _cur_s["period_no"] if _cur_s else None
+    if _cur_no_s is not None:
+        _prev_ids_s = [p["id"] for p in _all_periods_s if (p.get("period_no") or 0) < _cur_no_s]
+        if _prev_ids_s:
+            _prev_rows_s = supabase.table("opname_sub_details").select(
+                "rab_item_id, volume_actual").in_("period_id", _prev_ids_s).execute().data or []
+            for r in _prev_rows_s:
+                rid = r["rab_item_id"]
+                prev_opname_map[rid] = (prev_opname_map.get(rid, 0) or 0) + (r.get("volume_actual", 0) or 0)
+except Exception:
+    prev_opname_map = {}
+
 # ==================== PANEL PEMILIHAN ITEM INVOICE ====================
 # Fallback aman: kasbon didefinisikan di col3 hanya bila ada periode; pastikan ada.
 try:
@@ -410,7 +428,8 @@ display_opname_tree(
     on_save=handle_save_opname_sub,
     show_photo_upload=False,
     show_kasbon=True,
-    key_prefix="opname_sub"
+    key_prefix="opname_sub",
+    prev_opname_map=prev_opname_map,
 )
 
 st.divider()

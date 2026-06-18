@@ -1,5 +1,6 @@
 import streamlit as st
 from utils.supabase_client import get_supabase
+from utils.helpers import format_rupiah
 from datetime import datetime
 from collections import defaultdict
 from io import BytesIO
@@ -243,14 +244,16 @@ else:
                     st.session_state.edit_expense = exp
                     st.rerun()
             with col2:
-                if st.button("🗑️ Hapus", key=f"del_{exp['id']}"):
-                    if st.session_state.get(f"confirm_{exp['id']}", False):
-                        supabase.table("project_expenses").delete().eq("id", exp['id']).execute()
-                        st.rerun()
-                    else:
-                        st.session_state[f"confirm_{exp['id']}"] = True
-                        st.warning("Klik lagi untuk hapus")
-                        st.rerun()
+                with st.popover("🗑️ Hapus", use_container_width=True):
+                    st.write(f"Hapus pengeluaran **{exp.get('description', '')}** "
+                             f"({format_rupiah(exp.get('amount', 0))})?")
+                    if st.button("Ya, hapus permanen", key=f"delconfirm_{exp['id']}", type="primary"):
+                        try:
+                            supabase.table("project_expenses").delete().eq("id", exp['id']).execute()
+                            st.success("Pengeluaran dihapus.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Gagal hapus: {e}")
 
 # Form Edit
 if "edit_expense" in st.session_state:

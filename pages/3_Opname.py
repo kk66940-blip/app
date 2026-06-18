@@ -245,6 +245,26 @@ opname_details = supabase.table("opname_details")\
 actual_map = {d['rab_item_id']: d.get('actual_volume', 0) for d in opname_details}
 photo_map = {d['rab_item_id']: d.get('photo_url') for d in opname_details}
 
+# Total opname dari periode-periode SEBELUM periode aktif (untuk hitung sisa).
+# Karena opname disimpan per-periode (increment), sisa = RAB - jumlah semua
+# periode sebelumnya.
+prev_opname_map = {}
+try:
+    _all_periods = supabase.table("opname_periods").select("id, period_no").eq(
+        "project_id", project_id).execute().data or []
+    _cur = next((p for p in _all_periods if p["id"] == current_period_id), None)
+    _cur_no = _cur["period_no"] if _cur else None
+    if _cur_no is not None:
+        _prev_ids = [p["id"] for p in _all_periods if (p.get("period_no") or 0) < _cur_no]
+        if _prev_ids:
+            _prev_rows = supabase.table("opname_details").select(
+                "rab_item_id, actual_volume").in_("period_id", _prev_ids).execute().data or []
+            for r in _prev_rows:
+                rid = r["rab_item_id"]
+                prev_opname_map[rid] = (prev_opname_map.get(rid, 0) or 0) + (r.get("actual_volume", 0) or 0)
+except Exception:
+    prev_opname_map = {}
+
 def handle_save_opname(item, new_actual, uploaded_file, new_kasbon=0):
     """Callback untuk menyimpan volume + foto.
 
@@ -295,7 +315,8 @@ display_opname_tree(
     actual_map=actual_map,
     on_save=handle_save_opname,
     show_photo_upload=True,
-    key_prefix="opname_main"
+    key_prefix="opname_main",
+    prev_opname_map=prev_opname_map,
 )
 
 # Tampilkan foto yang sudah ada (opsional, jika ingin ditampilkan di luar komponen)

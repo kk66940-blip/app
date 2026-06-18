@@ -104,23 +104,38 @@ def display_rab_tree(
     search_term: str = "",
     key_prefix: str = "rab",
     weights: Optional[Dict] = None,
+    totals: Optional[Dict] = None,
 ) -> None:
     """Specialized tree for RAB pages with edit/delete actions.
 
     weights : dict {item_id: bobot_persen} opsional untuk menampilkan bobot (%).
+    totals  : dict {item_id: total_rollup} opsional. Untuk item grup, total
+              ditampilkan dari penjumlahan sub-itemnya (bukan 0).
     """
+    # Set id yang punya anak (untuk tahu mana item grup)
+    _parent_ids = {it.get('parent_id') for it in items if it.get('parent_id') is not None}
 
     def render_rab_content(item: Dict):
         from utils.helpers import format_rupiah
 
         vol = item.get('volume') or 0
         price = item.get('unit_price') or 0
-        total = vol * price
+        own_total = vol * price
+        iid = item.get('id')
+        is_group = iid in _parent_ids
+
+        # Untuk item grup, pakai total rollup; untuk daun, total sendiri.
+        display_total = totals.get(iid, own_total) if (totals is not None and is_group) else own_total
 
         col1, col2, col3 = st.columns(3)
-        col1.metric("Volume", f"{vol:,.2f} {item.get('unit', '')}")
-        col2.metric("Harga Satuan", format_rupiah(price))
-        col3.metric("Total", format_rupiah(total))
+        if is_group:
+            col1.metric("Volume", "— (grup)")
+            col2.metric("Harga Satuan", "—")
+            col3.metric("Total (Σ sub)", format_rupiah(display_total))
+        else:
+            col1.metric("Volume", f"{vol:,.2f} {item.get('unit', '')}")
+            col2.metric("Harga Satuan", format_rupiah(price))
+            col3.metric("Total", format_rupiah(own_total))
 
         # Bobot pekerjaan (%) terhadap grand total RAB
         if weights is not None:
@@ -214,6 +229,7 @@ def display_opname_tree(
     kasbon_map: Optional[Dict] = None,
     search_term: str = "",
     key_prefix: str = "opname",
+    prev_opname_map: Optional[Dict] = None,
 ) -> None:
     """Specialized tree untuk halaman Opname dengan input volume inline.
 
@@ -241,6 +257,8 @@ def display_opname_tree(
         photo_map = {}
     if kasbon_map is None:
         kasbon_map = {}
+    if prev_opname_map is None:
+        prev_opname_map = {}
 
     # Bangun children_map sekali untuk kalkulasi subtotal header
     children_map_local = build_tree(items)
@@ -282,12 +300,25 @@ def display_opname_tree(
         # ── Leaf item: tampilkan metrics + form input ──
         vol_opname  = actual_map.get(item_id, 0) or 0
         nilai_opname = vol_opname * price
+        # Sisa = volume RAB - total opname periode sebelumnya (kumulatif lalu)
+        prev_total = prev_opname_map.get(item_id, 0) or 0
+        sisa = vol_rab - prev_total
 
         # Metrics row
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         col1.metric("Volume RAB", f"{vol_rab:,.2f} {unit}")
-        col2.metric("Volume Opname", f"{vol_opname:,.2f} {unit}")
-        col3.metric(price_label, format_rupiah(price))
+        col2.metric("Sudah Diopname", f"{prev_total:,.2f} {unit}",
+                    help="Total opname dari periode-periode sebelumnya.")
+        col3.metric("Sisa", f"{sisa:,.2f} {unit}",
+                    help="Volume RAB dikurangi total opname periode sebelumnya.")
+        col4.metric(price_label, format_rupiah(price))
+
+        # Peringatan bila input + sebelumnya melebihi RAB
+        if (vol_opname + prev_total) > vol_rab and vol_rab > 0:
+            st.warning(
+                f"⚠️ Total opname ({vol_opname + prev_total:,.2f}) melebihi volume "
+                f"RAB ({vol_rab:,.2f} {unit}). Periksa kembali."
+            )
 
         # Nilai & persentase (hanya jika sudah ada data)
         if vol_opname > 0:
