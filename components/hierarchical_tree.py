@@ -102,13 +102,17 @@ def display_rab_tree(
     on_edit: Optional[Callable[[Dict], None]] = None,
     on_delete: Optional[Callable[[Dict], None]] = None,
     search_term: str = "",
-    key_prefix: str = "rab"
+    key_prefix: str = "rab",
+    weights: Optional[Dict] = None,
 ) -> None:
-    """Specialized tree for RAB pages with edit/delete actions."""
-    
+    """Specialized tree for RAB pages with edit/delete actions.
+
+    weights : dict {item_id: bobot_persen} opsional untuk menampilkan bobot (%).
+    """
+
     def render_rab_content(item: Dict):
         from utils.helpers import format_rupiah
-        
+
         vol = item.get('volume') or 0
         price = item.get('unit_price') or 0
         total = vol * price
@@ -117,6 +121,11 @@ def display_rab_tree(
         col1.metric("Volume", f"{vol:,.2f} {item.get('unit', '')}")
         col2.metric("Harga Satuan", format_rupiah(price))
         col3.metric("Total", format_rupiah(total))
+
+        # Bobot pekerjaan (%) terhadap grand total RAB
+        if weights is not None:
+            w = weights.get(item.get('id'), 0.0)
+            st.caption(f"⚖️ Bobot: **{w:.2f}%** dari total RAB")
 
         col_edit, col_del = st.columns(2)
         with col_edit:

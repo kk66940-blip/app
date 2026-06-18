@@ -176,3 +176,114 @@ def build_bank_footer(elements: list, company: dict, styles) -> None:
         parts.append(f"Atas Nama: {company['account_holder']}")
     elements.append(Spacer(1, 0.4 * cm))
     elements.append(Paragraph("<br/>".join(parts), foot_style))
+
+
+def add_excel_letterhead(ws, company: dict, num_cols: int = 6) -> int:
+    """Tambahkan kop surat ke worksheet openpyxl di bagian atas.
+
+    Menulis logo (bila ada) + nama & info perusahaan, lalu mengembalikan nomor
+    baris pertama yang BEBAS dipakai untuk konten setelah kop (mis. judul tabel).
+
+    Parameters
+    ----------
+    ws       : worksheet openpyxl.
+    company  : hasil get_company_settings().
+    num_cols : jumlah kolom tabel (untuk merge teks kop).
+
+    Returns
+    -------
+    int : nomor baris berikutnya yang bebas (>= 1).
+    """
+    from openpyxl.styles import Font, Alignment
+    from openpyxl.utils import get_column_letter
+
+    last_col = get_column_letter(num_cols)
+
+    # Coba pasang logo: dukung file lokal (logo bundel) ATAU URL (logo upload).
+    logo_added = False
+    logo_path = company.get("logo_path", "")
+    try:
+        import os
+        from openpyxl.drawing.image import Image as XLImage
+
+        img_source = None
+        if logo_path and str(logo_path).startswith(("http://", "https://")):
+            # Logo dari URL (mis. hasil upload ke Supabase Storage): unduh dulu.
+            import urllib.request
+            with urllib.request.urlopen(str(logo_path), timeout=5) as resp:
+                img_source = BytesIO(resp.read())
+        elif logo_path and os.path.exists(str(logo_path)):
+            img_source = str(logo_path)
+
+        if img_source is not None:
+            img = XLImage(img_source)
+            # Skala logo ~70px tinggi menjaga rasio
+            target_h = 70
+            if img.height:
+                ratio = img.width / img.height
+                img.height = target_h
+                img.width = int(target_h * ratio)
+            ws.add_image(img, "A1")
+            logo_added = True
+    except Exception:
+        logo_added = False
+
+    # Teks kop di sebelah kanan logo (mulai kolom B bila ada logo, else A)
+    text_col_start = 2 if logo_added else 1
+    text_col_letter = get_column_letter(text_col_start)
+
+    name = company.get("company_name", "")
+    addr = company.get("address", "")
+    contact_bits = []
+    if company.get("phone"):
+        contact_bits.append(f"Telp: {company['phone']}")
+    if company.get("email"):
+        contact_bits.append(company["email"])
+    contact = "  |  ".join(contact_bits)
+    npwp = f"NPWP: {company['npwp']}" if company.get("npwp") else ""
+
+    # Baris 1: nama perusahaan (bold, biru)
+    ws.merge_cells(f"{text_col_letter}1:{last_col}1")
+    c = ws[f"{text_col_letter}1"]
+    c.value = name
+    c.font = Font(bold=True, size=14, color="0d6efd")
+    c.alignment = Alignment(horizontal="left", vertical="center")
+
+    # Baris 2: alamat
+    ws.merge_cells(f"{text_col_letter}2:{last_col}2")
+    ws[f"{text_col_letter}2"].value = addr
+    ws[f"{text_col_letter}2"].font = Font(size=9)
+    ws[f"{text_col_letter}2"].alignment = Alignment(horizontal="left")
+
+    # Baris 3: kontak + NPWP
+    line3 = contact + (("  |  " + npwp) if (contact and npwp) else npwp)
+    ws.merge_cells(f"{text_col_letter}3:{last_col}3")
+    ws[f"{text_col_letter}3"].value = line3
+    ws[f"{text_col_letter}3"].font = Font(size=9)
+
+    # Beri tinggi baris agar logo muat
+    for r in (1, 2, 3):
+        ws.row_dimensions[r].height = 22
+
+    # Baris 4 dibiarkan kosong sebagai pemisah; konten mulai baris 5.
+    return 5
+
+
+def upload_logo(file_bytes: bytes, filename: str, content_type: str = "image/png") -> str:
+    """Upload logo ke Supabase Storage (bucket 'opname-photos', folder company/).
+
+    Memakai bucket yang sama dengan foto opname (sudah ada & berfungsi).
+    Mengembalikan public URL logo. Melempar exception bila gagal (agar pemanggil
+    bisa menampilkan error).
+    """
+    import uuid
+
+    supabase = get_supabase()
+    ext = (filename.rsplit(".", 1)[-1] if "." in filename else "png").lower()
+    path = f"company/logo_{uuid.uuid4().hex}.{ext}"
+    supabase.storage.from_("opname-photos").upload(
+        path=path,
+        file=file_bytes,
+        file_options={"content-type": content_type},
+    )
+    return supabase.storage.from_("opname-photos").get_public_url(path)

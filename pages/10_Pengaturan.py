@@ -13,12 +13,45 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from utils.company import get_company_settings, save_company_settings
+from utils.company import get_company_settings, save_company_settings, upload_logo
 
 st.header("⚙️ Pengaturan Perusahaan")
-st.caption("Data ini dipakai sebagai kop surat pada PDF Invoice & SPK.")
+st.caption("Data ini dipakai sebagai kop surat pada PDF & Excel (Invoice, SPK, RAB, RAP, Pengeluaran).")
 
 company = get_company_settings()
+
+# ==================== UPLOAD LOGO (di luar form, diproses langsung) ====================
+st.subheader("Logo Perusahaan")
+lc1, lc2 = st.columns([2, 1])
+with lc1:
+    logo_file = st.file_uploader(
+        "Upload logo (PNG/JPG)", type=["png", "jpg", "jpeg"],
+        help="Logo akan disimpan permanen dan dipakai di kop dokumen.",
+    )
+    if logo_file is not None:
+        if st.button("⬆️ Simpan Logo", type="primary"):
+            try:
+                url = upload_logo(
+                    logo_file.getvalue(), logo_file.name,
+                    logo_file.type or "image/png",
+                )
+                # Simpan URL logo ke company_settings (pertahankan field lain)
+                current = get_company_settings()
+                current["logo_path"] = url
+                save_company_settings(current)
+                st.success("✅ Logo tersimpan dan akan dipakai di kop dokumen.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ Gagal upload logo: {e}")
+with lc2:
+    if company.get("logo_path"):
+        st.caption("Logo saat ini:")
+        try:
+            st.image(company["logo_path"], width=140)
+        except Exception:
+            st.warning("Logo tidak bisa dimuat.")
+
+st.divider()
 
 with st.form("company_form"):
     st.subheader("Identitas Perusahaan")
@@ -29,8 +62,8 @@ with st.form("company_form"):
     email = c2.text_input("Email", value=company.get("email", ""))
     npwp = st.text_input("NPWP", value=company.get("npwp", ""))
     logo_path = st.text_input(
-        "URL Logo (opsional)", value=company.get("logo_path", ""),
-        help="Tempel URL gambar logo (https://...). Dipakai di kop PDF bila valid.",
+        "URL Logo (alternatif manual)", value=company.get("logo_path", ""),
+        help="Terisi otomatis saat upload logo. Bisa juga tempel URL gambar manual.",
     )
 
     st.subheader("Rekening Bank (untuk footer Invoice)")
@@ -51,14 +84,6 @@ if submitted:
             "bank_name": bank_name, "account_number": account_number,
             "account_holder": account_holder, "footer": footer,
         })
-        st.success("✅ Data perusahaan tersimpan. Kop surat PDF akan memakai data ini.")
+        st.success("✅ Data perusahaan tersimpan. Kop surat PDF & Excel akan memakai data ini.")
     except Exception as e:
         st.error(f"❌ Gagal menyimpan: {e}")
-
-if company.get("logo_path"):
-    st.divider()
-    st.caption("Pratinjau logo:")
-    try:
-        st.image(company["logo_path"], width=180)
-    except Exception:
-        st.warning("URL logo tidak bisa dimuat sebagai gambar. Periksa kembali URL-nya.")

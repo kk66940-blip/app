@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from utils.supabase_client import get_supabase
-from utils.helpers import next_rab_code
+from utils.helpers import next_rab_code, VOLUME_CALC_TYPES, calc_total_volume
 from datetime import datetime
 
 from utils.ahsp_helper import get_ahsp_for_selection
@@ -86,10 +86,61 @@ with st.expander("➕ Tambah Item BARU", expanded=False):
             help="Kode dibuat otomatis melanjutkan urutan. Ubah hanya bila perlu.",
         )
         description = st.text_input("Uraian Pekerjaan", value="Pekerjaan ...")
-    
+
+    # ---------- Kalkulator Volume (opsional) ----------
+    use_calc = st.checkbox("📐 Hitung volume dari ukuran (BOQ)", value=False,
+                           help="Masukkan dimensi per segmen; volume dijumlahkan otomatis.")
+    calc_segments = []
+    calc_volume_result = None
+    if use_calc:
+        calc_type = st.selectbox(
+            "Jenis perhitungan", list(VOLUME_CALC_TYPES.keys()),
+            format_func=lambda k: VOLUME_CALC_TYPES[k]["label"],
+            key="rab_calc_type",
+        )
+        fields = VOLUME_CALC_TYPES[calc_type]["fields"]
+        st.caption(f"Isi baris-baris segmen (boleh banyak). Kolom 'jumlah' = pengali (mis. jumlah kolom/bidang).")
+
+        # Kolom dinamis sesuai tipe + kolom 'jumlah' pengali + 'nama' opsional
+        col_config = {"nama": st.column_config.TextColumn("Nama/Lokasi", width="medium")}
+        for f in fields:
+            label = {"panjang": "Panjang (m)", "lebar": "Lebar (m)", "tinggi": "Tinggi (m)",
+                     "berat_per_m": "Berat (kg/m)", "jumlah": "Jumlah"}[f]
+            col_config[f] = st.column_config.NumberColumn(label, min_value=0.0, step=0.01)
+        if calc_type != "unit":
+            col_config["jumlah"] = st.column_config.NumberColumn("Jumlah (pengali)", min_value=0.0, step=1.0)
+
+        # Baris awal kosong
+        init_rows = [{"nama": "", **{f: None for f in fields}}]
+        if calc_type != "unit":
+            init_rows[0]["jumlah"] = 1.0
+
+        edited = st.data_editor(
+            init_rows, num_rows="dynamic", key="rab_calc_editor",
+            column_config=col_config, use_container_width=True,
+        )
+
+        # Bentuk segmen & hitung
+        for row in edited:
+            seg = {"tipe": calc_type, "nama": row.get("nama", "")}
+            for f in fields:
+                seg[f] = row.get(f)
+            if calc_type != "unit":
+                seg["jumlah"] = row.get("jumlah")
+            # Lewati baris kosong
+            if any(seg.get(f) for f in fields):
+                calc_segments.append(seg)
+
+        calc_volume_result = calc_total_volume(calc_segments)
+        st.info(f"**Volume terhitung: {calc_volume_result:,.4f}** "
+                f"{VOLUME_CALC_TYPES[calc_type]['unit_hint']} (dari {len(calc_segments)} segmen)")
+
     col_a, col_b, col_c = st.columns(3)
     with col_a:
-        volume = st.number_input("Volume", value=1.0, step=0.01)
+        # Bila kalkulator dipakai, volume diisi dari hasil (tapi tetap bisa ditimpa)
+        _vol_default = calc_volume_result if (use_calc and calc_volume_result is not None) else 1.0
+        volume = st.number_input("Volume", value=float(_vol_default), step=0.01,
+                                 help="Terisi otomatis dari kalkulator bila dipakai.")
         unit = st.text_input("Satuan", value="m³")
     with col_b:
         unit_price = st.number_input("Harga Satuan (Rp)", value=100000, step=1000)
@@ -109,6 +160,13 @@ with st.expander("➕ Tambah Item BARU", expanded=False):
             "volume": volume, "unit": unit, "unit_price": unit_price,
             "level": level, "parent_id": parent_id, "sort_order": sort_order
         }
+        # Simpan rincian dimensi (BOQ) bila kalkulator dipakai
+        if use_calc and calc_segments:
+            import json
+            new_item["dimension_detail"] = json.dumps(
+                {"tipe": st.session_state.get("rab_calc_type"), "segments": calc_segments},
+                ensure_ascii=False,
+            )
         supabase.table("rab_items").insert(new_item).execute()
         st.success("✅ Item berhasil ditambahkan!")
         st.rerun()
@@ -202,12 +260,16 @@ def handle_rab_delete(item):
     st.rerun()
 
 if filtered_items:
+    # Bobot dihitung terhadap grand total SELURUH item RAB (bukan hasil filter)
+    from utils.helpers import compute_rab_weights
+    rab_weights = compute_rab_weights(all_rab_items)
     display_rab_tree(
         items=filtered_items,
         on_edit=handle_rab_edit,
         on_delete=handle_rab_delete,
         search_term=search_term,
-        key_prefix="rab_page"
+        key_prefix="rab_page",
+        weights=rab_weights,
     )
 else:
     if search_term:
@@ -250,7 +312,51 @@ if st.session_state.get("delete_item"):
 if "edit_item" in st.session_state:
     item = st.session_state.edit_item
     st.subheader(f"✏️ Edit Item: {item['code']}")
-    
+
+    # ---------- Rincian dimensi tersimpan (BOQ) ----------
+    _saved_dim = item.get("dimension_detail")
+    _recalc_volume = None
+    if _saved_dim:
+        import json
+        try:
+            _dim = json.loads(_saved_dim) if isinstance(_saved_dim, str) else _saved_dim
+            _segs = _dim.get("segments", [])
+            _tipe = _dim.get("tipe", "volume")
+        except Exception:
+            _dim, _segs, _tipe = None, [], "volume"
+
+        if _segs:
+            st.markdown("##### 📐 Rincian volume tersimpan (bisa diedit ulang)")
+            st.caption(f"Jenis: {VOLUME_CALC_TYPES.get(_tipe, {}).get('label', _tipe)}")
+            fields = VOLUME_CALC_TYPES.get(_tipe, {}).get("fields", [])
+            col_config = {"nama": st.column_config.TextColumn("Nama/Lokasi", width="medium")}
+            for f in fields:
+                label = {"panjang": "Panjang (m)", "lebar": "Lebar (m)", "tinggi": "Tinggi (m)",
+                         "berat_per_m": "Berat (kg/m)", "jumlah": "Jumlah"}[f]
+                col_config[f] = st.column_config.NumberColumn(label, min_value=0.0, step=0.01)
+            if _tipe != "unit":
+                col_config["jumlah"] = st.column_config.NumberColumn("Jumlah (pengali)", min_value=0.0, step=1.0)
+
+            _edited = st.data_editor(
+                _segs, num_rows="dynamic", key=f"edit_dim_{item['id']}",
+                column_config=col_config, use_container_width=True,
+            )
+            _new_segs = []
+            for row in _edited:
+                seg = {"tipe": _tipe, "nama": row.get("nama", "")}
+                for f in fields:
+                    seg[f] = row.get(f)
+                if _tipe != "unit":
+                    seg["jumlah"] = row.get("jumlah")
+                if any(seg.get(f) for f in fields):
+                    _new_segs.append(seg)
+            _recalc_volume = calc_total_volume(_new_segs)
+            st.info(f"**Volume terhitung ulang: {_recalc_volume:,.4f}** "
+                    f"{VOLUME_CALC_TYPES.get(_tipe, {}).get('unit_hint', '')} "
+                    f"— centang di form untuk memakai nilai ini.")
+            # Simpan segmen hasil edit utk dipakai saat submit
+            st.session_state[f"_recalc_segs_{item['id']}"] = (_new_segs, _tipe)
+
     with st.form("edit_rab_form"):
         col1, col2 = st.columns(2)
         with col1:
@@ -258,7 +364,11 @@ if "edit_item" in st.session_state:
             new_desc = st.text_input("Uraian Pekerjaan", value=item.get('description', ''))
             new_level = st.selectbox("Level", [0,1,2,3], index=item.get('level', 0))
         with col2:
-            new_volume = st.number_input("Volume", value=float(item.get('volume', 0)), step=0.01)
+            _use_recalc = False
+            if _recalc_volume is not None:
+                _use_recalc = st.checkbox(f"Pakai volume terhitung ulang ({_recalc_volume:,.4f})", value=False)
+            _vol_default = _recalc_volume if (_use_recalc and _recalc_volume is not None) else float(item.get('volume', 0))
+            new_volume = st.number_input("Volume", value=float(_vol_default), step=0.01)
             new_unit = st.text_input("Satuan", value=item.get('unit', ''))
             new_price = st.number_input("Harga Satuan (Rp)", value=float(item.get('unit_price', 0)), step=1000)
 
@@ -266,7 +376,8 @@ if "edit_item" in st.session_state:
         with col_btn1:
             if st.form_submit_button("💾 Simpan Perubahan", type="primary", use_container_width=True):
                 try:
-                    supabase.table("rab_items").update({
+                    import json
+                    update_data = {
                         "code": new_code,
                         "description": new_desc,
                         "level": new_level,
@@ -274,14 +385,20 @@ if "edit_item" in st.session_state:
                         "unit": new_unit,
                         "unit_price": new_price,
                         "updated_at": datetime.now().isoformat()
-                    }).eq("id", item['id']).execute()
-                    
+                    }
+                    # Perbarui rincian dimensi bila ada hasil edit
+                    _rs = st.session_state.get(f"_recalc_segs_{item['id']}")
+                    if _rs and _rs[0]:
+                        update_data["dimension_detail"] = json.dumps(
+                            {"tipe": _rs[1], "segments": _rs[0]}, ensure_ascii=False)
+                    supabase.table("rab_items").update(update_data).eq("id", item['id']).execute()
+
                     st.success("✅ Item berhasil diperbarui!")
                     del st.session_state.edit_item
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error: {e}")
-        
+
         with col_btn2:
             if st.form_submit_button("Batal", use_container_width=True):
                 del st.session_state.edit_item

@@ -62,3 +62,74 @@ def next_rab_code(all_items, parent_id, level):
         return f"{parent_code}.{max_n + 1}"
     # Fallback bila induk tak punya kode: pakai level
     return f"{max_n + 1}"
+
+
+# ==================== KALKULATOR VOLUME (BOQ) ====================
+# Jenis perhitungan volume yang didukung untuk input dimensi RAB.
+VOLUME_CALC_TYPES = {
+    "volume": {"label": "Volume (P×L×T)", "fields": ["panjang", "lebar", "tinggi"], "unit_hint": "m³"},
+    "luas":   {"label": "Luas (P×L)",     "fields": ["panjang", "lebar"],           "unit_hint": "m²"},
+    "panjang":{"label": "Panjang (m')",   "fields": ["panjang"],                    "unit_hint": "m'"},
+    "besi":   {"label": "Besi (panjang × kg/m)", "fields": ["panjang", "berat_per_m"], "unit_hint": "kg"},
+    "unit":   {"label": "Jumlah/Unit",    "fields": ["jumlah"],                     "unit_hint": "bh"},
+}
+
+
+def calc_segment_result(calc_type: str, seg: dict) -> float:
+    """Hitung hasil satu segmen berdasarkan jenis perhitungan.
+
+    seg berisi key seperti panjang/lebar/tinggi/berat_per_m/jumlah (angka).
+    'jumlah' (multiplier) berlaku untuk semua tipe; default 1 bila tak ada.
+    """
+    def g(k):
+        try:
+            return float(seg.get(k) or 0)
+        except (ValueError, TypeError):
+            return 0.0
+
+    mult = g("jumlah") if seg.get("jumlah") not in (None, "") else 1.0
+    if mult == 0:
+        mult = 1.0
+
+    if calc_type == "volume":
+        base = g("panjang") * g("lebar") * g("tinggi")
+    elif calc_type == "luas":
+        base = g("panjang") * g("lebar")
+    elif calc_type == "panjang":
+        base = g("panjang")
+    elif calc_type == "besi":
+        base = g("panjang") * g("berat_per_m")
+    elif calc_type == "unit":
+        # untuk unit, 'jumlah' ADALAH nilainya, bukan multiplier
+        return g("jumlah")
+    else:
+        base = 0.0
+    return base * mult
+
+
+def calc_total_volume(segments: list) -> float:
+    """Jumlahkan hasil semua segmen. Tiap segmen punya 'tipe' & dimensinya."""
+    if not segments:
+        return 0.0
+    total = 0.0
+    for seg in segments:
+        total += calc_segment_result(seg.get("tipe", "volume"), seg)
+    return round(total, 4)
+
+
+# ==================== BOBOT PEKERJAAN (%) ====================
+def compute_rab_weights(items: list) -> dict:
+    """Hitung bobot tiap item RAB = (nilai item / grand total) * 100.
+
+    Nilai item = volume * unit_price. Grand total = jumlah nilai SEMUA item
+    yang punya nilai (umumnya item daun/detail; item grup biasanya volume 0).
+
+    Mengembalikan dict {item_id: bobot_persen}. Bila grand total 0 -> semua 0.
+    """
+    def _val(it):
+        return (it.get("volume", 0) or 0) * (it.get("unit_price", 0) or 0)
+
+    grand = sum(_val(it) for it in items)
+    if grand <= 0:
+        return {it.get("id"): 0.0 for it in items}
+    return {it.get("id"): (_val(it) / grand * 100.0) for it in items}

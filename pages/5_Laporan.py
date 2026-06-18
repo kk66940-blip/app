@@ -65,27 +65,37 @@ if st.button("📊 Export ke Excel (Format Profesional)", type="primary", use_co
         top=Side(style='thin'), bottom=Side(style='thin')
     )
 
-    # Judul
-    ws.merge_cells('A1:F1')
-    ws['A1'] = f"RENCANA ANGGARAN BIAYA (RAB) - {project_name}"
-    ws['A1'].font = Font(bold=True, size=14, color="0d6efd")
-    ws['A1'].alignment = Alignment(horizontal='center')
+    # Kop surat (gagal-aman). Mengembalikan baris awal konten.
+    base = 1
+    try:
+        from utils.company import get_company_settings, add_excel_letterhead
+        base = add_excel_letterhead(ws, get_company_settings(), num_cols=6)
+    except Exception:
+        base = 1
 
-    ws.merge_cells('A2:F2')
-    ws['A2'] = f"Tanggal Export: {datetime.now().strftime('%d %B %Y')}"
-    ws['A2'].font = Font(italic=True, size=10)
+    title_row, date_row, hdr_row = base, base + 1, base + 3
+
+    # Judul
+    ws.merge_cells(start_row=title_row, start_column=1, end_row=title_row, end_column=6)
+    tc = ws.cell(row=title_row, column=1, value=f"RENCANA ANGGARAN BIAYA (RAB) - {project_name}")
+    tc.font = Font(bold=True, size=14, color="0d6efd")
+    tc.alignment = Alignment(horizontal='center')
+
+    ws.merge_cells(start_row=date_row, start_column=1, end_row=date_row, end_column=6)
+    dc = ws.cell(row=date_row, column=1, value=f"Tanggal Export: {datetime.now().strftime('%d %B %Y')}")
+    dc.font = Font(italic=True, size=10)
 
     # Header kolom
     headers = ["No", "Uraian Pekerjaan", "Satuan", "Volume", "Harga Satuan (Rp)", "Jumlah (Rp)"]
     for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=4, column=col, value=header)
+        cell = ws.cell(row=hdr_row, column=col, value=header)
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = Alignment(horizontal='center')
         cell.border = thin_border
 
     # Isi data
-    row_num = 5
+    row_num = hdr_row + 1
     item_no = 1
     grand_total = 0
 

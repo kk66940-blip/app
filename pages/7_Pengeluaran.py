@@ -37,20 +37,30 @@ def export_expenses_to_excel(expenses, project_name):
         top=Side(style='thin'), bottom=Side(style='thin')
     )
 
-    # Judul
-    ws.merge_cells('A1:F1')
-    ws['A1'] = f"LAPORAN PENGELUARAN PROYEK - {project_name}"
-    ws['A1'].font = title_font
-    ws['A1'].alignment = Alignment(horizontal='center')
+    # Kop surat (gagal-aman). Mengembalikan baris awal konten.
+    base = 1
+    try:
+        from utils.company import get_company_settings, add_excel_letterhead
+        base = add_excel_letterhead(ws, get_company_settings(), num_cols=6)
+    except Exception:
+        base = 1
 
-    ws.merge_cells('A2:F2')
-    ws['A2'] = f"Tanggal Export: {datetime.now().strftime('%d %B %Y')}"
-    ws['A2'].font = Font(italic=True, size=10)
+    title_row, date_row, hdr_row = base, base + 1, base + 3
+
+    # Judul
+    ws.merge_cells(start_row=title_row, start_column=1, end_row=title_row, end_column=6)
+    tc = ws.cell(row=title_row, column=1, value=f"LAPORAN PENGELUARAN PROYEK - {project_name}")
+    tc.font = title_font
+    tc.alignment = Alignment(horizontal='center')
+
+    ws.merge_cells(start_row=date_row, start_column=1, end_row=date_row, end_column=6)
+    dc = ws.cell(row=date_row, column=1, value=f"Tanggal Export: {datetime.now().strftime('%d %B %Y')}")
+    dc.font = Font(italic=True, size=10)
 
     # Header Tabel
     headers = ["No", "Tanggal", "Kategori", "Uraian", "Dibayar Oleh", "Jumlah (Rp)"]
     for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=4, column=col, value=header)
+        cell = ws.cell(row=hdr_row, column=col, value=header)
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = Alignment(horizontal='center')
@@ -61,7 +71,7 @@ def export_expenses_to_excel(expenses, project_name):
     for exp in expenses:
         grouped[exp['category']].append(exp)
 
-    current_row = 5
+    current_row = hdr_row + 1
     item_no = 1
     grand_total = 0
 
