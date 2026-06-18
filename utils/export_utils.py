@@ -131,6 +131,10 @@ def export_hierarchical_excel(
             ws.cell(row=row_num, column=2, value="SUBTOTAL").font = SUBTOTAL_FONT
             ws.cell(row=row_num, column=6, value=sub_total).font = SUBTOTAL_FONT
             ws.cell(row=row_num, column=6).number_format = '#,##0'
+            # Bobot grup = subtotal / grand total (rollup dari anak-anaknya)
+            _grp_w = (sub_total / _grand_for_weight * 100.0) if _grand_for_weight > 0 else 0.0
+            ws.cell(row=row_num, column=7, value=_grp_w).font = SUBTOTAL_FONT
+            ws.cell(row=row_num, column=7).number_format = '0.00"%"'
             for c in range(1, 8):
                 ws.cell(row=row_num, column=c).border = THIN_BORDER
                 ws.cell(row=row_num, column=c).fill = SUBTOTAL_FILL
@@ -259,7 +263,9 @@ def export_hierarchical_pdf(
                 sub_total += add_to_pdf(child, path + [idx])
             
             subtotal_row_indices.append(current_row)
-            table_data.append(["", Paragraph("<b>SUBTOTAL</b>", normal), "", "", "", Paragraph(f"<b>{sub_total:,.0f}</b>", normal), ""])
+            _grp_w_pdf = (sub_total / _grand_weight_pdf * 100.0) if _grand_weight_pdf > 0 else 0.0
+            table_data.append(["", Paragraph("<b>SUBTOTAL</b>", normal), "", "", "", Paragraph(f"<b>{sub_total:,.0f}</b>", normal),
+                               Paragraph(f"<b>{_grp_w_pdf:.2f}%</b>", normal)])
             current_row += 1
             return sub_total
         else:

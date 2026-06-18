@@ -121,15 +121,48 @@ def calc_total_volume(segments: list) -> float:
 def compute_rab_weights(items: list) -> dict:
     """Hitung bobot tiap item RAB = (nilai item / grand total) * 100.
 
-    Nilai item = volume * unit_price. Grand total = jumlah nilai SEMUA item
-    yang punya nilai (umumnya item daun/detail; item grup biasanya volume 0).
+    Untuk item DAUN (tanpa anak): bobot = nilai sendiri / grand total.
+    Untuk item GRUP (punya anak, mis. main item): bobot = jumlah bobot semua
+    anaknya (rollup rekursif), sehingga main item menampilkan total bobot dari
+    seluruh sub-item di bawahnya. Total bobot semua main item = 100%.
 
-    Mengembalikan dict {item_id: bobot_persen}. Bila grand total 0 -> semua 0.
+    Grand total = jumlah nilai item daun. Bila 0 -> semua bobot 0.
     """
     def _val(it):
         return (it.get("volume", 0) or 0) * (it.get("unit_price", 0) or 0)
 
-    grand = sum(_val(it) for it in items)
+    # Peta anak per parent_id
+    children = {}
+    for it in items:
+        children.setdefault(it.get("parent_id"), []).append(it)
+
+    def _is_leaf(it):
+        return not children.get(it.get("id"))
+
+    grand = sum(_val(it) for it in items if _is_leaf(it))
     if grand <= 0:
         return {it.get("id"): 0.0 for it in items}
-    return {it.get("id"): (_val(it) / grand * 100.0) for it in items}
+
+    weights = {}
+
+    def _calc(it):
+        """Kembalikan bobot item; rekursif menjumlahkan anak untuk item grup."""
+        iid = it.get("id")
+        kids = children.get(iid, [])
+        if not kids:
+            w = _val(it) / grand * 100.0
+        else:
+            w = sum(_calc(child) for child in kids)
+        weights[iid] = w
+        return w
+
+    # Mulai dari root (parent_id None) agar seluruh pohon terhitung
+    for root in children.get(None, []):
+        _calc(root)
+
+    # Pastikan semua item punya entry (mis. item yatim yg parent-nya tak ada)
+    for it in items:
+        if it.get("id") not in weights:
+            weights[it.get("id")] = (_val(it) / grand * 100.0) if _is_leaf(it) else 0.0
+
+    return weights
