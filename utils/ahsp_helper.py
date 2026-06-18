@@ -208,3 +208,106 @@ def explode_ahsp_to_rab(ahsp_item: Dict, kubikasi: float) -> Dict:
         "unit_price": 0,    # nilai = penjumlahan child
     }
     return {"parent": parent, "children": children}
+
+
+# ==================== EDIT / DELETE: ITEM AHSP ====================
+def update_ahsp_item(item_id: int, code: str, description: str, unit: str) -> bool:
+    """Edit field dasar item AHSP."""
+    try:
+        supabase.table("ahsp_items").update({
+            "code": code, "description": description, "unit": unit,
+        }).eq("id", item_id).execute()
+        return True
+    except Exception as e:
+        print(f"Error update_ahsp_item: {e}")
+        return False
+
+
+def delete_ahsp_item(item_id: int) -> Dict[str, Any]:
+    """Hapus item AHSP. Tolak bila masih dipakai oleh RAB.
+
+    Mengembalikan {"ok": bool, "msg": str}. Komposisi & price_history milik item
+    ini ikut dihapus (data turunan langsung), tapi penghapusan ditolak bila item
+    direferensikan oleh rab_items (data proyek nyata).
+    """
+    try:
+        # Cek referensi dari RAB (lewat kode item — RAB menyimpan code, bukan id AHSP)
+        item = supabase.table("ahsp_items").select("code").eq("id", item_id).execute().data
+        if item:
+            code = item[0]["code"]
+            used = supabase.table("rab_items").select("id").eq("code", code).limit(1).execute().data
+            if used:
+                return {"ok": False, "msg": f"Item dipakai di RAB (kode {code}). Hapus dari RAB dulu."}
+
+        # Hapus data turunan langsung lalu itemnya
+        supabase.table("ahsp_item_resources").delete().eq("ahsp_item_id", item_id).execute()
+        try:
+            supabase.table("ahsp_price_history").delete().eq("ahsp_item_id", item_id).execute()
+        except Exception:
+            pass  # price_history opsional
+        supabase.table("ahsp_items").delete().eq("id", item_id).execute()
+        return {"ok": True, "msg": "Item AHSP dihapus."}
+    except Exception as e:
+        return {"ok": False, "msg": f"Gagal hapus: {e}"}
+
+
+# ==================== EDIT / DELETE: RESOURCE ====================
+def update_resource(resource_id: int, name: str, unit: str, current_price: float) -> bool:
+    """Edit nama/satuan/harga resource. Setelah harga berubah, item yang memakai
+    resource ini perlu di-update harganya (lihat pemanggilan di UI)."""
+    try:
+        supabase.table("ahsp_resources").update({
+            "name": name, "unit": unit, "current_price": current_price,
+        }).eq("id", resource_id).execute()
+        return True
+    except Exception as e:
+        print(f"Error update_resource: {e}")
+        return False
+
+
+def get_resource_usage(resource_id: int) -> int:
+    """Berapa banyak item AHSP yang memakai resource ini (di komposisi)."""
+    try:
+        rows = supabase.table("ahsp_item_resources").select("id").eq(
+            "resource_id", resource_id).execute().data
+        return len(rows) if rows else 0
+    except Exception:
+        return 0
+
+
+def delete_resource(resource_id: int) -> Dict[str, Any]:
+    """Hapus resource. Tolak bila masih dipakai di komposisi item AHSP."""
+    try:
+        n = get_resource_usage(resource_id)
+        if n > 0:
+            return {"ok": False, "msg": f"Resource dipakai di {n} komposisi item. Lepaskan dulu."}
+        supabase.table("ahsp_resources").delete().eq("id", resource_id).execute()
+        return {"ok": True, "msg": "Resource dihapus."}
+    except Exception as e:
+        return {"ok": False, "msg": f"Gagal hapus: {e}"}
+
+
+# ==================== EDIT / DELETE: KOMPOSISI ====================
+def update_composition_coefficient(comp_id: int, coefficient: float) -> bool:
+    """Ubah koefisien satu baris komposisi (ahsp_item_resources)."""
+    try:
+        supabase.table("ahsp_item_resources").update(
+            {"coefficient": coefficient}).eq("id", comp_id).execute()
+        return True
+    except Exception as e:
+        print(f"Error update_composition_coefficient: {e}")
+        return False
+
+
+def delete_composition(comp_id: int, ahsp_item_id: int) -> bool:
+    """Hapus satu baris komposisi, lalu perbarui harga item."""
+    try:
+        supabase.table("ahsp_item_resources").delete().eq("id", comp_id).execute()
+        try:
+            supabase.rpc("update_ahsp_unit_price", {"p_ahsp_item_id": ahsp_item_id}).execute()
+        except Exception:
+            pass
+        return True
+    except Exception as e:
+        print(f"Error delete_composition: {e}")
+        return False

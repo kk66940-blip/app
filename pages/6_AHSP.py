@@ -9,7 +9,14 @@ from utils.ahsp_helper import (
     get_all_resources,
     add_resource,
     get_item_composition,
-    save_item_composition
+    save_item_composition,
+    update_ahsp_item,
+    delete_ahsp_item,
+    update_resource,
+    get_resource_usage,
+    delete_resource,
+    update_composition_coefficient,
+    delete_composition,
 )
 from utils.helpers import format_rupiah
 from datetime import datetime
@@ -84,7 +91,22 @@ with tab1:
             if composition:
                 for comp in composition:
                     res = comp.get('ahsp_resources', {})
-                    st.write(f"• {res.get('name', 'Unknown')} → Koefisien: **{comp['coefficient']}** {res.get('unit', '')}")
+                    ccol1, ccol2, ccol3 = st.columns([3, 1.3, 1])
+                    ccol1.write(f"• {res.get('name', 'Unknown')} ({res.get('unit', '')})")
+                    new_coef = ccol2.number_input(
+                        "Koef", value=float(comp['coefficient']), step=0.01,
+                        key=f"coefedit_{comp['id']}", label_visibility="collapsed",
+                    )
+                    if abs(new_coef - float(comp['coefficient'])) > 1e-9:
+                        if ccol2.button("💾", key=f"coefsave_{comp['id']}", help="Simpan koefisien"):
+                            if update_composition_coefficient(comp['id'], new_coef):
+                                update_unit_price(item['id'])
+                                st.success("Koefisien diperbarui!")
+                                st.rerun()
+                    if ccol3.button("🗑️", key=f"compdel_{comp['id']}", help="Hapus dari komposisi"):
+                        if delete_composition(comp['id'], item['id']):
+                            st.success("Resource dilepas dari komposisi!")
+                            st.rerun()
             else:
                 st.caption("Belum ada komposisi.")
 
@@ -112,6 +134,36 @@ with tab1:
                 if update_unit_price(item['id']):
                     st.success("Harga diperbarui!")
                     st.rerun()
+
+            st.divider()
+            # ---------- Edit / Hapus Item AHSP ----------
+            ecol1, ecol2 = st.columns(2)
+            with ecol1:
+                with st.popover("✏️ Edit Item", use_container_width=True):
+                    with st.form(f"form_edit_item_{item['id']}"):
+                        e_code = st.text_input("Kode", value=item.get('code', ''), key=f"ec_{item['id']}")
+                        e_desc = st.text_input("Uraian", value=item.get('description', ''), key=f"ed_{item['id']}")
+                        e_unit = st.text_input("Satuan", value=item.get('unit', ''), key=f"eu_{item['id']}")
+                        if st.form_submit_button("💾 Simpan Perubahan", type="primary"):
+                            if e_code and e_desc and e_unit:
+                                if update_ahsp_item(item['id'], e_code, e_desc, e_unit):
+                                    st.success("Item diperbarui!")
+                                    st.rerun()
+                                else:
+                                    st.error("Gagal memperbarui (mungkin kode bentrok).")
+                            else:
+                                st.warning("Kode, Uraian, Satuan wajib diisi.")
+            with ecol2:
+                with st.popover("🗑️ Hapus Item", use_container_width=True):
+                    st.warning(f"Hapus item **{item['code']}**? Komposisinya ikut terhapus. "
+                               "Ditolak bila masih dipakai di RAB.")
+                    if st.button("Ya, hapus permanen", key=f"delitem_{item['id']}", type="primary"):
+                        res = delete_ahsp_item(item['id'])
+                        if res["ok"]:
+                            st.success(res["msg"])
+                            st.rerun()
+                        else:
+                            st.error(res["msg"])
 
 # ============================================================
 # TAB 2: KELOLA RESOURCE
@@ -144,7 +196,42 @@ with tab2:
     resources = get_all_resources()
     if resources:
         for r in resources:
-            st.write(f"`{r['code']}` | **{r['name']}** | {r['resource_type']} | {r['unit']} | {format_rupiah(r['current_price'])}")
+            rcol1, rcol2, rcol3 = st.columns([4, 1, 1])
+            rcol1.write(f"`{r['code']}` | **{r['name']}** | {r['resource_type']} | "
+                        f"{r['unit']} | {format_rupiah(r['current_price'])}")
+            with rcol2:
+                with st.popover("✏️", use_container_width=True):
+                    with st.form(f"form_edit_res_{r['id']}"):
+                        er_name = st.text_input("Nama", value=r['name'], key=f"ern_{r['id']}")
+                        er_unit = st.text_input("Satuan", value=r['unit'], key=f"eru_{r['id']}")
+                        er_price = st.number_input("Harga (Rp)", value=float(r['current_price']),
+                                                   step=1000.0, key=f"erp_{r['id']}")
+                        if st.form_submit_button("💾 Simpan", type="primary"):
+                            if update_resource(r['id'], er_name, er_unit, er_price):
+                                # Harga resource berubah -> perbarui harga semua item terkait
+                                try:
+                                    update_all_ahsp_prices()
+                                except Exception:
+                                    pass
+                                st.success("Resource diperbarui (harga item terkait disegarkan).")
+                                st.rerun()
+                            else:
+                                st.error("Gagal memperbarui.")
+            with rcol3:
+                with st.popover("🗑️", use_container_width=True):
+                    usage = get_resource_usage(r['id'])
+                    if usage > 0:
+                        st.warning(f"Dipakai di {usage} komposisi item. Tidak bisa dihapus "
+                                   "sebelum dilepas dari item-item itu.")
+                    else:
+                        st.write(f"Hapus resource **{r['name']}**?")
+                        if st.button("Ya, hapus", key=f"delres_{r['id']}", type="primary"):
+                            res = delete_resource(r['id'])
+                            if res["ok"]:
+                                st.success(res["msg"])
+                                st.rerun()
+                            else:
+                                st.error(res["msg"])
     else:
         st.info("Belum ada resource.")
 
