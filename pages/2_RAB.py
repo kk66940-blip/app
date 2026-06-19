@@ -146,7 +146,13 @@ with st.expander("➕ Tambah Item BARU", expanded=False):
         unit_price = st.number_input("Harga Satuan (Rp)", value=100000, step=1000)
     with col_c:
         sort_order = st.number_input("Urutan", value=1, step=1)
-    
+
+    is_addendum = st.checkbox(
+        "📌 Tandai sebagai Pekerjaan Tambah / Adendum",
+        value=False,
+        help="Item adendum tetap ikut opname & laporan, tapi bisa dipisah dari RAB asli.",
+    )
+
     if st.button("💾 Simpan Item BARU", type="primary"):
         parent_id = None
         if parent_choice != "Tidak ada (Main Item)":
@@ -158,7 +164,8 @@ with st.expander("➕ Tambah Item BARU", expanded=False):
         new_item = {
             "project_id": project_id, "code": code, "description": description,
             "volume": volume, "unit": unit, "unit_price": unit_price,
-            "level": level, "parent_id": parent_id, "sort_order": sort_order
+            "level": level, "parent_id": parent_id, "sort_order": sort_order,
+            "is_addendum": is_addendum,
         }
         # Simpan rincian dimensi (BOQ) bila kalkulator dipakai
         if use_calc and calc_segments:
@@ -484,6 +491,8 @@ if "edit_item" in st.session_state:
             new_volume = st.number_input("Volume", value=float(_vol_default), step=0.01)
             new_unit = st.text_input("Satuan", value=item.get('unit', ''))
             new_price = st.number_input("Harga Satuan (Rp)", value=float(item.get('unit_price', 0)), step=1000)
+            new_is_addendum = st.checkbox("📌 Pekerjaan Tambah / Adendum",
+                                          value=bool(item.get('is_addendum', False)))
 
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
@@ -497,6 +506,7 @@ if "edit_item" in st.session_state:
                         "volume": new_volume,
                         "unit": new_unit,
                         "unit_price": new_price,
+                        "is_addendum": new_is_addendum,
                         "updated_at": datetime.now().isoformat()
                     }
                     # Perbarui rincian dimensi bila ada hasil edit

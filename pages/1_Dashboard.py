@@ -17,7 +17,7 @@ if not project_id:
 
 # ==================== AMBIL DATA ====================
 rab_items = supabase.table("rab_items")\
-    .select("id, parent_id, level, code, description, volume, unit_price")\
+    .select("id, parent_id, level, code, description, volume, unit_price, is_addendum")\
     .eq("project_id", project_id)\
     .order("level").order("sort_order").execute().data
 
@@ -27,11 +27,16 @@ children_map = defaultdict(list)
 for item in rab_items:
     children_map[item.get('parent_id')].append(item)
 
-total_rab = sum(
-    (item.get('volume') or 0) * (item.get('unit_price') or 0)
-    for item in rab_items
-    if len(children_map.get(item.get('id'), [])) == 0
-)
+def _is_leaf(it):
+    return len(children_map.get(it.get('id'), [])) == 0
+
+def _val(it):
+    return (it.get('volume') or 0) * (it.get('unit_price') or 0)
+
+# RAB asli = leaf yang BUKAN adendum; Adendum = leaf yang ditandai adendum
+total_rab_asli = sum(_val(it) for it in rab_items if _is_leaf(it) and not it.get('is_addendum'))
+total_adendum = sum(_val(it) for it in rab_items if _is_leaf(it) and it.get('is_addendum'))
+total_rab = total_rab_asli + total_adendum  # total kontrak + tambah
 
 # Opname Utama (RAB)
 opname_details = supabase.table("opname_details")\
@@ -74,10 +79,24 @@ period_count = supabase.table("opname_periods")\
 # ==================== BAGIAN 1: RAB & OPNAME ====================
 st.subheader("💰 Ringkasan RAB & Opname")
 
+# Rincian nilai kontrak: RAB asli + Adendum = Total
+if total_adendum > 0:
+    ca, cb, cc = st.columns(3)
+    with ca:
+        st.markdown("**Nilai RAB Asli**")
+        st.markdown(f"<div style='font-size:20px; font-weight:bold;'>{format_rupiah(total_rab_asli)}</div>", unsafe_allow_html=True)
+    with cb:
+        st.markdown("**Pekerjaan Tambah / Adendum**")
+        st.markdown(f"<div style='font-size:20px; font-weight:bold; color:#fd7e14;'>{format_rupiah(total_adendum)}</div>", unsafe_allow_html=True)
+    with cc:
+        st.markdown("**Total (RAB + Adendum)**")
+        st.markdown(f"<div style='font-size:20px; font-weight:bold; color:#0d6efd;'>{format_rupiah(total_rab)}</div>", unsafe_allow_html=True)
+    st.divider()
+
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    st.markdown("**Total RAB**")
+    st.markdown("**Total RAB**" + (" (+ Adendum)" if total_adendum > 0 else ""))
     st.markdown(f"<div style='font-size:22px; font-weight:bold; color:#0d6efd;'>{format_rupiah(total_rab)}</div>", unsafe_allow_html=True)
 
 with col2:

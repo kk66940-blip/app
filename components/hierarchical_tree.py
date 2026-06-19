@@ -142,6 +142,10 @@ def display_rab_tree(
             w = weights.get(item.get('id'), 0.0)
             st.caption(f"⚖️ Bobot: **{w:.2f}%** dari total RAB")
 
+        # Penanda adendum / pekerjaan tambah
+        if item.get('is_addendum'):
+            st.caption("📌 **Pekerjaan Tambah / Adendum** (di luar RAB asli)")
+
         col_edit, col_del = st.columns(2)
         with col_edit:
             if st.button("✏️ Edit", key=f"{key_prefix}_edit_{item['id']}", use_container_width=True):
