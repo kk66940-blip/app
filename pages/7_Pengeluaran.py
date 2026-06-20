@@ -144,6 +144,18 @@ expenses = supabase.table("project_expenses") \
     .order("expense_date", desc=True) \
     .execute().data
 
+# Ambil rincian item per nota (tabel anak). Aman bila tabel belum ada / kosong.
+expense_items_map = {}
+try:
+    _exp_ids = [e["id"] for e in (expenses or [])]
+    if _exp_ids:
+        _items = supabase.table("expense_items").select("*").in_(
+            "expense_id", _exp_ids).order("sort_order").execute().data or []
+        for it in _items:
+            expense_items_map.setdefault(it["expense_id"], []).append(it)
+except Exception:
+    expense_items_map = {}
+
 col1, col2 = st.columns([3, 1])
 with col2:
     if expenses and st.button("📊 Export ke Excel", type="primary", use_container_width=True):
@@ -159,51 +171,111 @@ with col2:
 
 st.divider()
 
-# ==================== FORM TAMBAH PENGELUARAN ====================
-with st.expander("➕ Tambah Pengeluaran Baru", expanded=False):
-    with st.form("form_add_expense", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-        with col1:
-            expense_date = st.date_input("Tanggal Pengeluaran", datetime.now().date())
-            category = st.selectbox("Kategori Pengeluaran *", 
-                ["Material", "Upah / Tenaga Kerja", "Sewa Alat", "BBM / Transportasi", "Lain-lain"])
-            other_category = st.text_input("Isi Kategori Lainnya *") if category == "Lain-lain" else ""
+# ==================== FORM TAMBAH PENGELUARAN (PER ITEM) ====================
+with st.expander("➕ Tambah Pengeluaran Baru (per item)", expanded=False):
+    st.caption("Satu nota bisa berisi banyak item. Total per baris = qty × harga satuan, "
+               "dan total nota dijumlahkan otomatis.")
 
-        with col2:
-            amount = st.number_input("Jumlah (Rp) *", min_value=0, step=10000, format="%d")
-            paid_by = st.text_input("Dibayar Oleh")
+    col1, col2 = st.columns(2)
+    with col1:
+        expense_date = st.date_input("Tanggal Pengeluaran", datetime.now().date(), key="exp_date")
+        category = st.selectbox("Kategori Pengeluaran *",
+            ["Material", "Upah / Tenaga Kerja", "Sewa Alat", "BBM / Transportasi", "Lain-lain"],
+            key="exp_cat")
+        other_category = st.text_input("Isi Kategori Lainnya *", key="exp_othercat") if category == "Lain-lain" else ""
+    with col2:
+        paid_by = st.text_input("Dibayar Oleh", key="exp_paidby")
+        notes = st.text_input("Catatan Tambahan", key="exp_notes")
 
-        description = st.text_area("Uraian / Keterangan")
-        notes = st.text_input("Catatan Tambahan")
+    description = st.text_input("Uraian / Keterangan Nota (opsional)", key="exp_desc")
 
-        uploaded_file = st.file_uploader("Upload Bukti Foto", type=["jpg", "png", "jpeg"])
+    # Saran nama item dari daftar material (bila ada), untuk pilihan campur
+    material_names = []
+    try:
+        mats = supabase.table("materials").select("name").execute().data or []
+        material_names = [m["name"] for m in mats if m.get("name")]
+    except Exception:
+        material_names = []
 
-        if st.form_submit_button("💾 Simpan", type="primary", use_container_width=True):
-            if amount > 0:
-                try:
-                    final_category = other_category if category == "Lain-lain" else category
-                    data = {
-                        "project_id": project_id,
-                        "expense_date": str(expense_date),
-                        "category": final_category,
-                        "description": description,
-                        "amount": amount,
-                        "paid_by": paid_by,
-                        "notes": notes,
-                        "created_by": st.session_state.user.get("username", "unknown")
-                    }
-                    if uploaded_file:
-                        file_path = f"expenses/{project_id}/{uuid.uuid4()}.{uploaded_file.name.split('.')[-1]}"
-                        supabase.storage.from_("opname-photos").upload(file_path, uploaded_file.getvalue())
-                        data["receipt_photo_url"] = supabase.storage.from_("opname-photos").get_public_url(file_path)
+    st.markdown("**Rincian Item:**")
+    if material_names:
+        st.caption(f"Tip: ada {len(material_names)} material tersimpan — bisa ketik bebas "
+                   "atau salin nama dari daftar material.")
 
-                    supabase.table("project_expenses").insert(data).execute()
-                    st.success("Pengeluaran berhasil disimpan!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Gagal menyimpan: {e}")
-            else:
-                st.error("Jumlah harus lebih dari 0.")
+    # Editor baris item: item, qty, satuan, harga satuan (total dihitung)
+    init_rows = [{"Item": "", "Qty": 0.0, "Satuan": "", "Harga Satuan": 0.0}]
+    edited = st.data_editor(
+        init_rows, num_rows="dynamic", key="exp_items_editor",
+        use_container_width=True,
+        column_config={
+            "Item": st.column_config.TextColumn("Item", width="medium"),
+            "Qty": st.column_config.NumberColumn("Qty", min_value=0.0, step=0.1),
+            "Satuan": st.column_config.TextColumn("Satuan", width="small"),
+            "Harga Satuan": st.column_config.NumberColumn("Harga Satuan (Rp)", min_value=0.0, step=1000.0),
+        },
+    )
+
+    # Hitung baris valid + total
+    valid_items = []
+    for i, row in enumerate(edited):
+        name = (row.get("Item") or "").strip()
+        qty = float(row.get("Qty") or 0)
+        price = float(row.get("Harga Satuan") or 0)
+        if name and (qty > 0 or price > 0):
+            valid_items.append({
+                "item_name": name,
+                "qty": qty,
+                "unit": (row.get("Satuan") or "").strip(),
+                "unit_price": price,
+                "total": round(qty * price, 2),
+                "sort_order": i + 1,
+            })
+
+    total_nota = sum(it["total"] for it in valid_items)
+    if valid_items:
+        st.table([{"Item": it["item_name"], "Qty": f"{it['qty']:g} {it['unit']}",
+                   "Harga Satuan": format_rupiah(it["unit_price"]),
+                   "Total": format_rupiah(it["total"])} for it in valid_items])
+    st.markdown(f"### Total Nota: {format_rupiah(total_nota)}")
+
+    uploaded_file = st.file_uploader("Upload Bukti Foto", type=["jpg", "png", "jpeg"], key="exp_foto")
+
+    if st.button("💾 Simpan Pengeluaran", type="primary", use_container_width=True, key="exp_save"):
+        if not valid_items:
+            st.error("Tambahkan minimal satu item dengan qty/harga.")
+        elif category == "Lain-lain" and not other_category.strip():
+            st.error("Isi kategori 'Lain-lain' dulu.")
+        else:
+            try:
+                final_category = other_category if category == "Lain-lain" else category
+                data = {
+                    "project_id": project_id,
+                    "expense_date": str(expense_date),
+                    "category": final_category,
+                    "description": description,
+                    "amount": total_nota,  # total = jumlah semua item
+                    "paid_by": paid_by,
+                    "notes": notes,
+                    "created_by": st.session_state.user.get("username", "unknown"),
+                }
+                if uploaded_file:
+                    file_path = f"expenses/{project_id}/{uuid.uuid4()}.{uploaded_file.name.split('.')[-1]}"
+                    supabase.storage.from_("opname-photos").upload(file_path, uploaded_file.getvalue())
+                    data["receipt_photo_url"] = supabase.storage.from_("opname-photos").get_public_url(file_path)
+
+                # 1) Insert nota induk
+                ins = supabase.table("project_expenses").insert(data).execute()
+                new_exp_id = ins.data[0]["id"] if ins.data else None
+
+                # 2) Insert baris item ke tabel anak
+                if new_exp_id:
+                    rows = [{**it, "expense_id": new_exp_id} for it in valid_items]
+                    supabase.table("expense_items").insert(rows).execute()
+
+                st.success(f"Pengeluaran tersimpan ({len(valid_items)} item, total {format_rupiah(total_nota)}).")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Gagal menyimpan: {e}")
 
 st.divider()
 
@@ -235,6 +307,20 @@ else:
             st.write(f"**Dibayar Oleh:** {exp.get('paid_by', '-')}")
             if exp.get('notes'):
                 st.write(f"**Catatan:** {exp.get('notes')}")
+
+            # Rincian item (bila ada). Nota lama tanpa item tetap tampil normal.
+            _items = expense_items_map.get(exp["id"], [])
+            if _items:
+                st.markdown("**Rincian Item:**")
+                st.table([{
+                    "Item": it.get("item_name", ""),
+                    "Qty": f"{(it.get('qty') or 0):g} {it.get('unit', '')}",
+                    "Harga Satuan": format_rupiah(it.get("unit_price", 0)),
+                    "Total": format_rupiah(it.get("total", 0)),
+                } for it in _items])
+            else:
+                st.caption("(Nota ini tanpa rincian item — dicatat sebagai jumlah total.)")
+
             if exp.get("receipt_photo_url"):
                 st.image(exp["receipt_photo_url"], width=200)
 
@@ -249,6 +335,8 @@ else:
                              f"({format_rupiah(exp.get('amount', 0))})?")
                     if st.button("Ya, hapus permanen", key=f"delconfirm_{exp['id']}", type="primary"):
                         try:
+                            # Hapus item anak dulu (aman walau FK cascade belum aktif)
+                            supabase.table("expense_items").delete().eq("expense_id", exp['id']).execute()
                             supabase.table("project_expenses").delete().eq("id", exp['id']).execute()
                             st.success("Pengeluaran dihapus.")
                             st.rerun()
@@ -258,12 +346,74 @@ else:
 # Form Edit
 if "edit_expense" in st.session_state:
     exp = st.session_state.edit_expense
-    with st.form("edit_form"):
-        new_amount = st.number_input("Jumlah", value=float(exp['amount']), step=10000.0)
-        new_paid_by = st.text_input("Dibayar Oleh", value=exp.get('paid_by', ''))
-        if st.form_submit_button("Simpan Perubahan"):
-            supabase.table("project_expenses").update({
-                "amount": new_amount, "paid_by": new_paid_by
-            }).eq("id", exp['id']).execute()
-            del st.session_state.edit_expense
-            st.rerun()
+    st.divider()
+    st.subheader(f"✏️ Edit Pengeluaran — {exp.get('expense_date','')}")
+
+    _edit_items = expense_items_map.get(exp["id"], [])
+
+    new_paid_by = st.text_input("Dibayar Oleh", value=exp.get('paid_by', ''), key="editexp_paidby")
+    new_notes = st.text_input("Catatan", value=exp.get('notes', ''), key="editexp_notes")
+
+    if _edit_items:
+        st.markdown("**Edit Rincian Item:**")
+        rows_init = [{"Item": it.get("item_name", ""), "Qty": float(it.get("qty") or 0),
+                      "Satuan": it.get("unit", ""), "Harga Satuan": float(it.get("unit_price") or 0)}
+                     for it in _edit_items]
+        edited_e = st.data_editor(
+            rows_init, num_rows="dynamic", key=f"editexp_items_{exp['id']}",
+            use_container_width=True,
+            column_config={
+                "Item": st.column_config.TextColumn("Item", width="medium"),
+                "Qty": st.column_config.NumberColumn("Qty", min_value=0.0, step=0.1),
+                "Satuan": st.column_config.TextColumn("Satuan", width="small"),
+                "Harga Satuan": st.column_config.NumberColumn("Harga Satuan (Rp)", min_value=0.0, step=1000.0),
+            },
+        )
+        new_items = []
+        for i, row in enumerate(edited_e):
+            name = (row.get("Item") or "").strip()
+            qty = float(row.get("Qty") or 0)
+            price = float(row.get("Harga Satuan") or 0)
+            if name and (qty > 0 or price > 0):
+                new_items.append({"item_name": name, "qty": qty,
+                                  "unit": (row.get("Satuan") or "").strip(),
+                                  "unit_price": price, "total": round(qty * price, 2),
+                                  "sort_order": i + 1})
+        new_total = sum(it["total"] for it in new_items)
+        st.markdown(f"### Total Nota: {format_rupiah(new_total)}")
+
+        cbtn1, cbtn2 = st.columns(2)
+        with cbtn1:
+            if st.button("💾 Simpan Perubahan", type="primary", key="editexp_save"):
+                try:
+                    supabase.table("project_expenses").update({
+                        "amount": new_total, "paid_by": new_paid_by, "notes": new_notes,
+                    }).eq("id", exp['id']).execute()
+                    # Ganti item: hapus lama, insert baru (sederhana & konsisten)
+                    supabase.table("expense_items").delete().eq("expense_id", exp['id']).execute()
+                    if new_items:
+                        supabase.table("expense_items").insert(
+                            [{**it, "expense_id": exp['id']} for it in new_items]).execute()
+                    del st.session_state.edit_expense
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Gagal: {e}")
+        with cbtn2:
+            if st.button("Batal", key="editexp_cancel"):
+                del st.session_state.edit_expense
+                st.rerun()
+    else:
+        # Nota lama tanpa item: edit jumlah langsung (kompatibilitas)
+        new_amount = st.number_input("Jumlah (Rp)", value=float(exp['amount']), step=10000.0, key="editexp_amt")
+        cbtn1, cbtn2 = st.columns(2)
+        with cbtn1:
+            if st.button("💾 Simpan Perubahan", type="primary", key="editexp_save2"):
+                supabase.table("project_expenses").update({
+                    "amount": new_amount, "paid_by": new_paid_by, "notes": new_notes,
+                }).eq("id", exp['id']).execute()
+                del st.session_state.edit_expense
+                st.rerun()
+        with cbtn2:
+            if st.button("Batal", key="editexp_cancel2"):
+                del st.session_state.edit_expense
+                st.rerun()
