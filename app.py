@@ -77,6 +77,7 @@ else:
 pages = [
     st.Page("pages/0_Projects.py", title="Projects", icon="🏗️"),
     st.Page("pages/1_Dashboard.py", title="Dashboard", icon="📈"),
+    st.Page("pages/13_Rekap_Proyek.py", title="Rekap Proyek", icon="📑"),
     st.Page("pages/2_RAB.py", title="RAB", icon="📋"),
     st.Page("pages/12_Adendum.py", title="Adendum", icon="📌"),
     st.Page("pages/3_Opname.py", title="Opname", icon="📝"),

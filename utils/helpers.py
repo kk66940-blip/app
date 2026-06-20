@@ -267,3 +267,65 @@ def compute_rab_totals(items: list) -> dict:
                 (it.get("volume", 0) or 0) * (it.get("unit_price", 0) or 0)
 
     return totals
+
+
+# ==================== REKAP LINTAS PROYEK ====================
+def compute_project_recap(project_id, rab_items, opname_details, expenses):
+    """Hitung ringkasan satu proyek untuk rekap.
+
+    Parameters
+    ----------
+    project_id      : id proyek (untuk referensi).
+    rab_items       : list rab_items proyek ini (punya id, parent_id, volume,
+                      unit_price, is_addendum).
+    opname_details  : list opname_details proyek ini (punya rab_item_id,
+                      actual_volume) dari SEMUA periode.
+    expenses        : list project_expenses proyek ini (punya amount).
+
+    Returns dict: nilai_rab_asli, nilai_adendum, nilai_rab_total, total_opname,
+    progres_pct, total_pengeluaran, sisa_penagihan, laba_kasar.
+
+    Catatan: total_opname menjumlahkan SEMUA periode (opname disimpan per-periode
+    increment), bukan hanya periode terakhir.
+    """
+    # Total RAB dari item leaf saja (konsisten dgn export)
+    children = {}
+    for it in rab_items:
+        children.setdefault(it.get("parent_id"), []).append(it)
+
+    def _is_leaf(it):
+        return not children.get(it.get("id"))
+
+    def _val(it):
+        return (it.get("volume", 0) or 0) * (it.get("unit_price", 0) or 0)
+
+    nilai_rab_asli = sum(_val(it) for it in rab_items if _is_leaf(it) and not it.get("is_addendum"))
+    nilai_adendum = sum(_val(it) for it in rab_items if _is_leaf(it) and it.get("is_addendum"))
+    nilai_rab_total = nilai_rab_asli + nilai_adendum
+
+    # Harga per item (semua item, untuk lookup)
+    price_map = {it.get("id"): (it.get("unit_price", 0) or 0) for it in rab_items}
+
+    # Total opname = Σ (volume per periode × harga), DIJUMLAH lintas periode.
+    total_opname = 0.0
+    for d in opname_details:
+        rid = d.get("rab_item_id")
+        total_opname += (d.get("actual_volume", 0) or 0) * price_map.get(rid, 0)
+
+    total_pengeluaran = sum((e.get("amount", 0) or 0) for e in expenses)
+
+    progres_pct = (total_opname / nilai_rab_total * 100.0) if nilai_rab_total > 0 else 0.0
+    sisa_penagihan = nilai_rab_total - total_opname
+    laba_kasar = total_opname - total_pengeluaran
+
+    return {
+        "project_id": project_id,
+        "nilai_rab_asli": nilai_rab_asli,
+        "nilai_adendum": nilai_adendum,
+        "nilai_rab_total": nilai_rab_total,
+        "total_opname": total_opname,
+        "progres_pct": round(progres_pct, 2),
+        "total_pengeluaran": total_pengeluaran,
+        "sisa_penagihan": sisa_penagihan,
+        "laba_kasar": laba_kasar,
+    }
