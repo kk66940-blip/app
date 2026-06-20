@@ -30,6 +30,22 @@ all_rab_items = supabase.table("rab_items")\
     .eq("project_id", project_id)\
     .order("level").order("sort_order").execute().data
 
+# Adendum dikelola di halaman terpisah -> sembunyikan dari halaman RAB utama.
+# Sembunyikan item yang ditandai adendum DAN seluruh turunannya.
+_adendum_ids = {it['id'] for it in all_rab_items if it.get('is_addendum')}
+def _has_adendum_ancestor(it):
+    cur = it
+    seen = set()
+    while cur and cur.get('parent_id') and cur['parent_id'] not in seen:
+        seen.add(cur['parent_id'])
+        if cur['parent_id'] in _adendum_ids:
+            return True
+        cur = next((x for x in all_rab_items if x['id'] == cur['parent_id']), None)
+    return False
+
+rab_view_items = [it for it in all_rab_items
+                  if not it.get('is_addendum') and not _has_adendum_ancestor(it)]
+
 # ==================== TRUE LIVE SEARCH ====================
 st.markdown("### 🔍 Live Search (Update Langsung Saat Mengetik)")
 
@@ -43,21 +59,21 @@ if search_term and search_term.strip() != "":
     search_lower = search_term.lower().strip()
     
     matched_ids = set()
-    for item in all_rab_items:
+    for item in rab_view_items:
         if search_lower in item.get('code', '').lower() or search_lower in item.get('description', '').lower():
             matched_ids.add(item['id'])
             current = item
             while current.get('parent_id'):
                 matched_ids.add(current['parent_id'])
-                current = next((x for x in all_rab_items if x['id'] == current['parent_id']), None)
+                current = next((x for x in rab_view_items if x['id'] == current['parent_id']), None)
                 if current is None:
                     break
 
-    filtered_items = [item for item in all_rab_items if item['id'] in matched_ids]
+    filtered_items = [item for item in rab_view_items if item['id'] in matched_ids]
     match_count = len([i for i in filtered_items if search_lower in i.get('code','').lower() or search_lower in i.get('description','').lower()])
     st.success(f"✅ Ditemukan **{match_count} item** yang cocok dengan **'{search_term}'**")
 else:
-    filtered_items = all_rab_items
+    filtered_items = rab_view_items
 
 st.divider()
 
@@ -378,10 +394,10 @@ def handle_rab_delete(item):
     st.rerun()
 
 if filtered_items:
-    # Bobot & total rollup dihitung dari SELURUH item RAB (bukan hasil filter)
+    # Bobot & total rollup untuk halaman RAB dihitung dari item non-adendum
     from utils.helpers import compute_rab_weights, compute_rab_totals
-    rab_weights = compute_rab_weights(all_rab_items)
-    rab_totals = compute_rab_totals(all_rab_items)
+    rab_weights = compute_rab_weights(rab_view_items)
+    rab_totals = compute_rab_totals(rab_view_items)
     display_rab_tree(
         items=filtered_items,
         on_edit=handle_rab_edit,
