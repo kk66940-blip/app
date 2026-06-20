@@ -51,6 +51,14 @@ if period_ids:
 all_exp = supabase.table("project_expenses").select(
     "project_id, amount").in_("project_id", project_ids).execute().data or []
 
+# Pembayaran masuk semua proyek (kas riil). Aman bila tabel belum ada.
+all_pay = []
+try:
+    all_pay = supabase.table("project_payments").select(
+        "project_id, amount").in_("project_id", project_ids).execute().data or []
+except Exception:
+    all_pay = []
+
 # ---------- Kelompokkan per proyek ----------
 rab_by_proj = {}
 for it in all_rab:
@@ -66,6 +74,10 @@ exp_by_proj = {}
 for e in all_exp:
     exp_by_proj.setdefault(e["project_id"], []).append(e)
 
+pay_by_proj = {}
+for p in all_pay:
+    pay_by_proj.setdefault(p["project_id"], []).append(p)
+
 # ---------- Hitung rekap tiap proyek ----------
 recaps = []
 for p in projects:
@@ -75,6 +87,7 @@ for p in projects:
         rab_by_proj.get(pid, []),
         opname_by_proj.get(pid, []),
         exp_by_proj.get(pid, []),
+        pay_by_proj.get(pid, []),
     )
     r["name"] = p["name"]
     r["client"] = p.get("client", "")
@@ -83,15 +96,19 @@ for p in projects:
 # ---------- Total gabungan semua proyek ----------
 g_rab = sum(r["nilai_rab_total"] for r in recaps)
 g_opname = sum(r["total_opname"] for r in recaps)
+g_masuk = sum(r["uang_masuk"] for r in recaps)
 g_exp = sum(r["total_pengeluaran"] for r in recaps)
-g_laba = sum(r["laba_kasar"] for r in recaps)
+g_margin = sum(r["margin"] for r in recaps)
 
 st.markdown("##### Total Gabungan Semua Proyek")
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Total Nilai Proyek", format_rupiah(g_rab))
-c2.metric("Total Opname", format_rupiah(g_opname))
-c3.metric("Total Pengeluaran", format_rupiah(g_exp))
-c4.metric("Total Laba Kasar", format_rupiah(g_laba))
+c1, c2, c3 = st.columns(3)
+c1.metric("Total Nilai Proyek (RAB)", format_rupiah(g_rab))
+c2.metric("Total Tertagih (Opname)", format_rupiah(g_opname))
+c3.metric("Total Uang Masuk (Kas)", format_rupiah(g_masuk))
+c4, c5, c6 = st.columns(3)
+c4.metric("Total Pengeluaran", format_rupiah(g_exp))
+c5.metric("Total Piutang (blm dibayar)", format_rupiah(g_opname - g_masuk))
+c6.metric("Total Margin (kas)", format_rupiah(g_margin))
 
 st.divider()
 
@@ -99,12 +116,13 @@ st.divider()
 st.markdown("##### Rincian per Proyek")
 st.table([{
     "Proyek": r["name"],
-    "Nilai RAB (+Add)": format_rupiah(r["nilai_rab_total"]),
-    "Opname": format_rupiah(r["total_opname"]),
+    "Nilai RAB": format_rupiah(r["nilai_rab_total"]),
+    "Tertagih (Opname)": format_rupiah(r["total_opname"]),
     "Progres": f"{r['progres_pct']:.1f}%",
+    "Uang Masuk": format_rupiah(r["uang_masuk"]),
+    "Piutang": format_rupiah(r["piutang"]),
     "Pengeluaran": format_rupiah(r["total_pengeluaran"]),
-    "Sisa Penagihan": format_rupiah(r["sisa_penagihan"]),
-    "Laba Kasar": format_rupiah(r["laba_kasar"]),
+    "Margin (kas)": format_rupiah(r["margin"]),
 } for r in recaps])
 
 st.divider()
@@ -128,7 +146,10 @@ for r in recaps:
         cc[0].metric("Nilai RAB", format_rupiah(r["nilai_rab_total"]),
                      help=f"RAB asli {format_rupiah(r['nilai_rab_asli'])}"
                           + (f" + adendum {format_rupiah(r['nilai_adendum'])}" if r["nilai_adendum"] else ""))
-        cc[1].metric("Opname", format_rupiah(r["total_opname"]))
-        cc[2].metric("Sisa Penagihan", format_rupiah(r["sisa_penagihan"]))
-        cc[3].metric("Laba Kasar", format_rupiah(r["laba_kasar"]),
-                     delta=f"{(r['laba_kasar']/r['total_opname']*100):.0f}%" if r["total_opname"] else None)
+        cc[1].metric("Uang Masuk", format_rupiah(r["uang_masuk"]),
+                     help=f"Tertagih (opname): {format_rupiah(r['total_opname'])}")
+        cc[2].metric("Piutang", format_rupiah(r["piutang"]),
+                     help="Sudah ditagih (opname) tapi belum dibayar klien.")
+        cc[3].metric("Margin (kas)", format_rupiah(r["margin"]),
+                     delta=f"{(r['margin']/r['uang_masuk']*100):.0f}%" if r["uang_masuk"] else None,
+                     help="Uang masuk riil - pengeluaran.")
