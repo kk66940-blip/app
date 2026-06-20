@@ -270,25 +270,25 @@ def compute_rab_totals(items: list) -> dict:
 
 
 # ==================== REKAP LINTAS PROYEK ====================
-def compute_project_recap(project_id, rab_items, opname_details, expenses):
+def compute_project_recap(project_id, rab_items, opname_details, expenses, payments=None):
     """Hitung ringkasan satu proyek untuk rekap.
 
     Parameters
     ----------
-    project_id      : id proyek (untuk referensi).
-    rab_items       : list rab_items proyek ini (punya id, parent_id, volume,
-                      unit_price, is_addendum).
-    opname_details  : list opname_details proyek ini (punya rab_item_id,
-                      actual_volume) dari SEMUA periode.
-    expenses        : list project_expenses proyek ini (punya amount).
+    project_id      : id proyek.
+    rab_items       : list rab_items proyek ini.
+    opname_details  : list opname_details proyek ini (SEMUA periode).
+    expenses        : list project_expenses proyek ini.
+    payments        : list project_payments proyek ini (uang masuk riil dari
+                      klien). Bila None, uang_masuk = 0.
 
-    Returns dict: nilai_rab_asli, nilai_adendum, nilai_rab_total, total_opname,
-    progres_pct, total_pengeluaran, sisa_penagihan, laba_kasar.
+    Returns dict termasuk: nilai_rab_total, total_opname (nilai tertagih),
+    uang_masuk (kas riil), total_pengeluaran, piutang (tertagih - uang_masuk),
+    margin (uang_masuk - pengeluaran), sisa_penagihan, laba_kasar.
 
-    Catatan: total_opname menjumlahkan SEMUA periode (opname disimpan per-periode
-    increment), bukan hanya periode terakhir.
+    Catatan: total_opname menjumlahkan SEMUA periode (opname per-periode).
+    'uang_masuk' adalah pembayaran klien yang BENAR-BENAR tercatat (bukan opname).
     """
-    # Total RAB dari item leaf saja (konsisten dgn export)
     children = {}
     for it in rab_items:
         children.setdefault(it.get("parent_id"), []).append(it)
@@ -303,20 +303,21 @@ def compute_project_recap(project_id, rab_items, opname_details, expenses):
     nilai_adendum = sum(_val(it) for it in rab_items if _is_leaf(it) and it.get("is_addendum"))
     nilai_rab_total = nilai_rab_asli + nilai_adendum
 
-    # Harga per item (semua item, untuk lookup)
     price_map = {it.get("id"): (it.get("unit_price", 0) or 0) for it in rab_items}
 
-    # Total opname = Σ (volume per periode × harga), DIJUMLAH lintas periode.
     total_opname = 0.0
     for d in opname_details:
         rid = d.get("rab_item_id")
         total_opname += (d.get("actual_volume", 0) or 0) * price_map.get(rid, 0)
 
     total_pengeluaran = sum((e.get("amount", 0) or 0) for e in expenses)
+    uang_masuk = sum((p.get("amount", 0) or 0) for p in (payments or []))
 
     progres_pct = (total_opname / nilai_rab_total * 100.0) if nilai_rab_total > 0 else 0.0
-    sisa_penagihan = nilai_rab_total - total_opname
-    laba_kasar = total_opname - total_pengeluaran
+    sisa_penagihan = nilai_rab_total - total_opname        # nilai kontrak belum diopname
+    piutang = total_opname - uang_masuk                    # sudah ditagih, belum dibayar
+    margin = uang_masuk - total_pengeluaran                # untung KAS riil
+    laba_kasar = total_opname - total_pengeluaran          # untung atas dasar tertagih
 
     return {
         "project_id": project_id,
@@ -324,8 +325,11 @@ def compute_project_recap(project_id, rab_items, opname_details, expenses):
         "nilai_adendum": nilai_adendum,
         "nilai_rab_total": nilai_rab_total,
         "total_opname": total_opname,
+        "uang_masuk": uang_masuk,
         "progres_pct": round(progres_pct, 2),
         "total_pengeluaran": total_pengeluaran,
         "sisa_penagihan": sisa_penagihan,
+        "piutang": piutang,
+        "margin": margin,
         "laba_kasar": laba_kasar,
     }
